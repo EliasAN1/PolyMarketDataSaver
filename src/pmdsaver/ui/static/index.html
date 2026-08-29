@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTC 5m · will it finish above PTB?</title>
+  <link rel="stylesheet" href="/static/app.css?v=5" />
+  <script src="https://unpkg.com/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/app.js?v=3" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1 id="slug">BTC 5m</h1>
+      <div class="sub" id="subtitle">Connecting…</div>
+    </div>
+    <div class="countdown-block">
+      <div class="countdown-meta">
+        <span id="countdown">-:--</span>
+        <span class="muted" id="windowRange"></span>
+      </div>
+      <div class="countdown-track" aria-hidden="true">
+        <div class="countdown-fill" id="countdownFill"></div>
+      </div>
+    </div>
+    <div class="controls">
+      <a class="nav-link" href="/analyse">Analyse</a>
+      <a class="nav-link" href="/backtest">Strategy Lab</a>
+      <a class="nav-link" href="/replay">Replay</a>
+      <span class="pill" id="livePill">OFFLINE</span>
+      <label class="check">
+        <input type="checkbox" id="followLive" checked />
+        Follow live
+      </label>
+      <select id="windowSelect" aria-label="5-minute window"></select>
+      <a class="nav-link" id="replayLink" href="/replay">Full replay</a>
+    </div>
+  </header>
+
+  <section class="hero" id="hero">
+    <div class="hero-cell">
+      <div class="label">Price to beat</div>
+      <div class="value" id="ptbValue">—</div>
+      <div class="meta" id="ptbMeta">waiting…</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">UP odds</div>
+      <div class="value" id="upValue">—</div>
+      <div class="meta" id="upMeta">waiting for book</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">BTC − PTB</div>
+      <div class="value" id="deltaValue">—</div>
+      <div class="meta" id="deltaMeta">Binance spot</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">Implied side</div>
+      <div class="value" id="sideValue">—</div>
+      <div class="meta" id="sideMeta">spot vs price to beat</div>
+    </div>
+  </section>
+
+  <div class="error" id="errorBox" hidden></div>
+
+  <main class="shell">
+    <section class="chart-panel">
+      <div class="chart-legend">
+        <span class="swatch bn"></span> Binance spot
+        <span class="swatch ptb"></span> PTB
+        <span class="swatch up"></span> UP mid
+        <span class="swatch twap"></span> 60s TWAP
+      </div>
+      <div id="chart" class="chart"></div>
+    </section>
+
+    <aside class="rail">
+      <section class="rail-block">
+        <h2>Exchanges vs PTB</h2>
+        <table class="ex-table">
+          <thead>
+            <tr><th></th><th>Venue</th><th>Price</th><th>vs PTB</th></tr>
+          </thead>
+          <tbody>
+            <tr data-source="binance_spot">
+              <td><input type="checkbox" class="overlay" data-source="binance_spot" checked disabled /></td>
+              <td>Binance spot</td>
+              <td class="px">—</td>
+              <td class="vs">—</td>
+            </tr>
+            <tr data-source="binance_futures">
+              <td><input type="checkbox" class="overlay" data-source="binance_futures" /></td>
+              <td>Binance fut</td>
+              <td class="px">—</td>
+              <td class="vs">—</td>
+            </tr>
+            <tr data-source="coinbase_spot">
+              <td><input type="checkbox" class="overlay" data-source="coinbase_spot" /></td>
+              <td>Coinbase</td>
+              <td class="px">—</td>
+              <td class="vs">—</td>
+            </tr>
+            <tr data-source="bybit_spot">
+              <td><input type="checkbox" class="overlay" data-source="bybit_spot" /></td>
+              <td>Bybit</td>
+              <td class="px">—</td>
+              <td class="vs">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="rail-block">
+        <h2>5m volume</h2>
+        <div class="kv"><span>Binance</span><strong id="volBn">—</strong></div>
+        <div class="kv"><span>Coinbase</span><strong id="volCb">—</strong></div>
+      </section>
+
+      <section class="rail-block">
+        <h2>Feeds</h2>
+        <div class="kv"><span>Status</span><strong id="feedMode">connecting</strong></div>
+        <div class="kv"><span>Odds</span><strong id="oddsRate">0/s</strong></div>
+        <div class="kv"><span>Prices</span><strong id="priceRate">0/s</strong></div>
+        <div class="kv"><span>Tick age</span><strong id="tickAge">—</strong></div>
+      </section>
+
+      <details class="rail-block events">
+        <summary>Last odds events</summary>
+        <table class="mini">
+          <thead><tr><th>Time</th><th>Type</th><th>UP</th></tr></thead>
+          <tbody id="eventsBody"></tbody>
+        </table>
+      </details>
+    </aside>
+  </main>
+</body>
+</html>

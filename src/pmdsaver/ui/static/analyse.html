@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTC 5m · analyse</title>
+  <link rel="stylesheet" href="/static/app.css?v=4" />
+  <link rel="stylesheet" href="/static/backtest.css?v=4" />
+  <link rel="stylesheet" href="/static/analyse.css?v=2" />
+  <script src="/static/analyse.js?v=2" defer></script>
+</head>
+<body>
+  <header class="bt-header">
+    <div class="brand">
+      <h1>Feed analyser</h1>
+      <div class="sub">Sample odds, spot, TWAP, and volume at a fixed time in every closed window.</div>
+    </div>
+    <div class="controls">
+      <a class="nav-link" href="/">Live</a>
+      <a class="nav-link active" href="/analyse">Analyse</a>
+      <a class="nav-link" href="/backtest">Strategy Lab</a>
+      <a class="nav-link" href="/replay">Replay</a>
+    </div>
+  </header>
+
+  <form id="anForm" class="bt-form">
+    <label>
+      Features at
+      <select id="atS" name="at_s">
+        <option value="60">1:00</option>
+        <option value="120">2:00</option>
+        <option value="180" selected>3:00</option>
+        <option value="240">4:00</option>
+        <option value="300">close</option>
+      </select>
+    </label>
+    <label>
+      Slug filter
+      <input id="slug" name="slug" type="text" placeholder="optional" />
+    </label>
+    <label>
+      Workers
+      <input id="workers" name="workers" type="number" min="0" max="16" step="1" value="0" title="0 = auto" />
+    </label>
+    <div class="bt-run">
+      <button type="submit" id="runBtn">Load</button>
+      <span class="muted" id="anStatus"></span>
+    </div>
+  </form>
+
+  <div class="error" id="errorBox" hidden></div>
+
+  <section class="hero" id="summary" hidden>
+    <div class="hero-cell">
+      <div class="label">Windows</div>
+      <div class="value" id="kpiWindows">—</div>
+      <div class="meta" id="kpiWindowsMeta">complete snapshots</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">UP rate</div>
+      <div class="value" id="kpiUpRate">—</div>
+      <div class="meta" id="kpiUpMeta">settled UP / all</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">Mean |BTC−PTB|</div>
+      <div class="value" id="kpiDist">—</div>
+      <div class="meta" id="kpiDistMeta">absolute distance</div>
+    </div>
+    <div class="hero-cell">
+      <div class="label">UP mid W / L</div>
+      <div class="value" id="kpiMid">—</div>
+      <div class="meta" id="kpiMidMeta">mean book on winners vs losers</div>
+    </div>
+  </section>
+
+  <main class="an-main">
+    <section class="an-charts">
+      <div class="an-chart-card">
+        <div class="chart-legend">Calibration — UP mid vs actual UP rate</div>
+        <svg id="calChart" class="an-chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="an-chart-card">
+        <div class="chart-legend">Distance — BTC−PTB vs actual UP rate</div>
+        <svg id="distChart" class="an-chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="an-chart-card an-chart-wide">
+        <div class="chart-legend">Scatter — BTC−PTB vs UP mid (green UP, red DOWN)</div>
+        <svg id="scatterChart" class="an-chart an-chart-tall" viewBox="0 0 800 280" preserveAspectRatio="none"></svg>
+      </div>
+    </section>
+    <section class="bt-table-wrap">
+      <table class="bt-table" id="anTable">
+        <thead>
+          <tr>
+            <th data-sort="slug">Window</th>
+            <th data-sort="elapsed_s">Elapsed</th>
+            <th data-sort="outcome">Outcome</th>
+            <th data-sort="up_mid">UP mid</th>
+            <th data-sort="btc_minus_ptb">BTC−PTB</th>
+            <th data-sort="twap_minus_ptb">TWAP−PTB</th>
+            <th data-sort="volume_base">Vol</th>
+            <th data-sort="spot_side">Spot</th>
+            <th data-sort="odds_agree_spot">Agree</th>
+            <th data-sort="venues_up">Venues UP</th>
+            <th data-sort="venues_down">Venues DN</th>
+          </tr>
+        </thead>
+        <tbody id="rowsBody">
+          <tr><td colspan="11" class="muted">Load features to see windows.</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

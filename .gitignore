@@ -1,0 +1,27 @@
+# Collected SQLite — never publish
+data/
+*.db
+*.db-*
+*.db.bak*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+.env.*
+
+# PyInstaller
+build/
+dist/
+
+# OS / editor
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

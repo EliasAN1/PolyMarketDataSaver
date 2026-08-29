@@ -1,0 +1,73 @@
+.an-main {
+  padding: 0.85rem 1.15rem 1.5rem;
+}
+
+.an-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.an-chart-wide {
+  grid-column: 1 / -1;
+}
+
+.an-chart-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.chart-legend {
+  padding: 0.55rem 0.8rem 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.an-chart {
+  display: block;
+  width: 100%;
+  height: 220px;
+}
+
+.an-chart-tall {
+  height: 280px;
+}
+
+.bt-table th[data-sort] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.bt-table th[data-sort]:hover {
+  color: var(--text);
+}
+
+.bt-table th.sort-asc::after {
+  content: " \2191";
+}
+
+.bt-table th.sort-desc::after {
+  content: " \2193";
+}
+
+@media (max-width: 900px) {
+  .an-charts {
+    grid-template-columns: 1fr;
+  }
+  .an-chart-wide {
+    grid-column: auto;
+  }
+}
+
+.lab-window-link {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--muted);
+}
+
+.lab-window-link:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}

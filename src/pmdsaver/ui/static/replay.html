@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTC 5m · window replay</title>
+  <link rel="stylesheet" href="/static/app.css?v=5" />
+  <link rel="stylesheet" href="/static/backtest.css?v=5" />
+  <link rel="stylesheet" href="/static/lab.css?v=3" />
+  <link rel="stylesheet" href="/static/replay.css?v=1" />
+  <script src="https://unpkg.com/lightweight-charts@5.0.8/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/replay.js?v=1" defer></script>
+</head>
+<body>
+  <header class="bt-header">
+    <div class="brand">
+      <h1>Window replay</h1>
+      <div class="sub">Every collected tick for one 5-minute market — odds, TWAP, and all four venues.</div>
+    </div>
+    <div class="controls">
+      <a class="nav-link" href="/">Live</a>
+      <a class="nav-link" href="/analyse">Analyse</a>
+      <a class="nav-link" href="/backtest">Strategy Lab</a>
+      <a class="nav-link active" href="/replay">Replay</a>
+    </div>
+  </header>
+
+  <div class="error" id="errorBox" hidden></div>
+
+  <div class="replay-toolbar">
+    <button type="button" id="prevBtn" class="lab-btn-secondary">Prev</button>
+    <select id="windowSelect" aria-label="5-minute window"></select>
+    <button type="button" id="nextBtn" class="lab-btn-secondary">Next</button>
+    <a class="nav-link" id="polyLink" href="#" target="_blank" rel="noopener">Polymarket</a>
+    <span class="muted" id="loadStatus">Pick a window.</span>
+  </div>
+
+  <section class="kpi-grid replay-kpis">
+    <div class="kpi-card">
+      <div class="label">Window</div>
+      <div class="value" id="kpiWhen">—</div>
+      <div class="meta" id="kpiWhenMeta">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Outcome</div>
+      <div class="value" id="kpiOutcome">—</div>
+      <div class="meta" id="kpiOutcomeMeta">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Price to beat</div>
+      <div class="value" id="kpiPtb">—</div>
+      <div class="meta" id="kpiPtbMeta">—</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Final price</div>
+      <div class="value" id="kpiFinal">—</div>
+      <div class="meta" id="kpiFinalMeta">Chainlink close</div>
+    </div>
+    <div class="kpi-card">
+      <div class="label">Ticks</div>
+      <div class="value" id="kpiTicks">—</div>
+      <div class="meta" id="kpiTicksMeta">odds / prices / twap</div>
+    </div>
+  </section>
+
+  <section class="lab-panel replay-chart-panel">
+    <div class="chart-legend">
+      <span class="swatch bn"></span> Binance spot
+      <span class="swatch ptb"></span> PTB
+      <span class="swatch fut"></span> Binance fut
+      <span class="swatch cb"></span> Coinbase
+      <span class="swatch by"></span> Bybit
+      <span class="swatch up"></span> UP mid
+      <span class="swatch down"></span> DOWN mid
+      <span class="swatch twap"></span> 60s TWAP
+    </div>
+    <div id="chart" class="replay-chart"></div>
+    <div class="lab-hint">Charts plot the last tick of each second so 60k+ odds ticks stay readable. The tables below are every tick.</div>
+  </section>
+
+  <section class="lab-panel">
+    <div class="replay-tabs" id="feedTabs" role="tablist">
+      <button type="button" class="replay-tab active" data-tab="odds">Odds</button>
+      <button type="button" class="replay-tab" data-tab="binance_spot">Binance spot</button>
+      <button type="button" class="replay-tab" data-tab="binance_futures">Binance fut</button>
+      <button type="button" class="replay-tab" data-tab="coinbase_spot">Coinbase</button>
+      <button type="button" class="replay-tab" data-tab="bybit_spot">Bybit</button>
+      <button type="button" class="replay-tab" data-tab="twap">60s TWAP</button>
+      <button type="button" class="replay-tab" data-tab="volume">Volume</button>
+    </div>
+    <div class="lab-trade-toolbar">
+      <label class="lab-toolbar-field">
+        <span>Search</span>
+        <input type="text" id="tickSearch" class="lab-trade-search" placeholder="Filter ticks…" />
+      </label>
+      <span class="muted" id="tickMeta"></span>
+    </div>
+    <div class="bt-table-wrap lab-trade-wrap">
+      <table class="bt-table lab-trades" id="ticksTable">
+        <thead id="ticksHead"></thead>
+        <tbody id="ticksBody">
+          <tr><td class="muted">Load a window to see ticks.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="lab-pagination">
+      <span class="muted" id="ticksPageLabel"></span>
+      <div class="lab-pagination-btns">
+        <button type="button" id="ticksPrevBtn" class="lab-btn-secondary">Prev</button>
+        <button type="button" id="ticksNextBtn" class="lab-btn-secondary">Next</button>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

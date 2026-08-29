@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BTC 5m · strategy lab</title>
+  <link rel="stylesheet" href="/static/app.css?v=4" />
+  <link rel="stylesheet" href="/static/backtest.css?v=5" />
+  <link rel="stylesheet" href="/static/lab.css?v=3" />
+  <script src="/static/lab_engine.js?v=1"></script>
+  <script src="/static/lab.js?v=2" defer></script>
+</head>
+<body>
+  <header class="bt-header">
+    <div class="brand">
+      <h1>Strategy Lab</h1>
+      <div class="sub">Change any variable, see PnL update instantly. One entry per window, hold to expiry.</div>
+    </div>
+    <div class="controls">
+      <a class="nav-link" href="/">Live</a>
+      <a class="nav-link" href="/analyse">Analyse</a>
+      <a class="nav-link active" href="/backtest">Strategy Lab</a>
+      <a class="nav-link" href="/replay">Replay</a>
+    </div>
+  </header>
+
+  <div class="error" id="errorBox" hidden></div>
+
+  <div class="lab-shell">
+    <aside class="lab-sidebar">
+      <div class="lab-group">
+        <h2>Data</h2>
+        <label class="lab-field">
+          <span>Window range</span>
+          <select id="rangeSel">
+            <option value="1">Last 1 day</option>
+            <option value="3" selected>Last 3 days</option>
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="0">All time</option>
+          </select>
+        </label>
+        <label class="lab-field">
+          <span>Slug filter</span>
+          <input id="slugFilter" type="text" placeholder="optional" />
+        </label>
+        <div class="lab-data-status" id="dataStatus">Loading…</div>
+        <div class="lab-progress" id="scanProgress" hidden><div class="lab-progress-fill" id="scanProgressFill"></div></div>
+        <button type="button" id="rescanBtn" class="lab-btn-secondary">Rescan</button>
+        <div class="lab-hint">Samples each window once per second for instant recompute. Entries can land up to 1s off the tick-exact CLI (<code>python -m pmdsaver.backtest</code>), which stays the source of truth for final numbers.</div>
+      </div>
+
+      <div class="lab-group">
+        <h2>Position</h2>
+        <label class="lab-field">
+          <span>Stake</span>
+          <div class="lab-input-row">
+            <span class="lab-prefix">$</span>
+            <input id="stake" type="number" min="0.01" step="0.5" value="1" />
+          </div>
+        </label>
+        <label class="lab-field">
+          <span>Taker fee rate</span>
+          <input id="feeRate" type="number" min="0" max="0.2" step="0.01" value="0.07" title="Crypto taker: fee = shares × rate × p × (1 − p). BTC 5m is 0.07." />
+        </label>
+        <label class="lab-field">
+          <span>Fill price</span>
+          <select id="fillMode">
+            <option value="ask" selected>Ask (conservative)</option>
+            <option value="mid">Mid</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="lab-group">
+        <h2>Entry filters</h2>
+
+        <div class="lab-filter" id="filterLastMinutes">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useLastMinutes" checked /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">Only in the last</span>
+            <input class="lab-filter-num" id="lastMinutesNum" type="number" min="0.5" max="5" step="0.5" value="3" />
+            <span class="lab-filter-unit">min</span>
+          </div>
+          <input class="lab-filter-range" id="lastMinutesRange" type="range" min="0.5" max="5" step="0.5" value="3" />
+        </div>
+
+        <div class="lab-filter" id="filterOdds">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useOdds" checked /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">Buy when odds reach</span>
+            <input class="lab-filter-num" id="hitOddsNum" type="number" min="0.05" max="0.95" step="0.01" value="0.25" />
+          </div>
+          <input class="lab-filter-range" id="hitOddsRange" type="range" min="0.05" max="0.95" step="0.01" value="0.25" />
+          <div class="lab-filter-hint">≥ 0.50 buys the favorite, &lt; 0.50 buys the underdog.</div>
+        </div>
+
+        <div class="lab-filter" id="filterSpot">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useSpot" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">BTC at least</span>
+            <input class="lab-filter-num" id="minDistanceNum" type="number" min="0" max="200" step="1" value="10" />
+            <span class="lab-filter-unit">$ from target</span>
+          </div>
+          <input class="lab-filter-range" id="minDistanceRange" type="range" min="0" max="200" step="1" value="10" />
+        </div>
+
+        <div class="lab-filter" id="filterTwap">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useTwap" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">60s TWAP agrees with the side</span>
+          </div>
+        </div>
+
+        <div class="lab-filter" id="filterVolume">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useVolume" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">Min 5m Binance volume</span>
+            <input class="lab-filter-num" id="minVolumeNum" type="number" min="0" max="1000" step="5" value="50" />
+          </div>
+          <input class="lab-filter-range" id="minVolumeRange" type="range" min="0" max="1000" step="5" value="50" />
+        </div>
+
+        <div class="lab-filter" id="filterVenues">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useVenues" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">At least</span>
+            <input class="lab-filter-num" id="minVenuesNum" type="number" min="1" max="4" step="1" value="2" />
+            <span class="lab-filter-unit">/ 4 exchanges agree</span>
+          </div>
+          <input class="lab-filter-range" id="minVenuesRange" type="range" min="1" max="4" step="1" value="2" />
+        </div>
+      </div>
+    </aside>
+
+    <main class="lab-main">
+      <section class="kpi-grid">
+        <div class="kpi-card">
+          <div class="label">Net PnL</div>
+          <div class="value" id="kpiNetPnl">—</div>
+          <div class="meta" id="kpiNetPnlMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Win rate</div>
+          <div class="value" id="kpiWinRate">—</div>
+          <div class="meta" id="kpiWinRateMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Trades</div>
+          <div class="value" id="kpiTrades">—</div>
+          <div class="meta" id="kpiTradesMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Fees paid</div>
+          <div class="value" id="kpiFees">—</div>
+          <div class="meta" id="kpiFeesMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Avg / trade</div>
+          <div class="value" id="kpiAvg">—</div>
+          <div class="meta" id="kpiAvgMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Max drawdown</div>
+          <div class="value" id="kpiDrawdown">—</div>
+          <div class="meta" id="kpiDrawdownMeta">—</div>
+        </div>
+      </section>
+
+      <section class="lab-panel">
+        <div class="chart-legend">Equity (cumulative PnL)</div>
+        <div class="bt-chart-box" id="equityBox">
+          <svg id="equityChart" class="bt-chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+          <div id="equityHair" class="bt-chart-hair" hidden></div>
+          <div id="equityDot" class="bt-chart-dot" hidden></div>
+          <div id="equityTip" class="bt-chart-tip" hidden></div>
+        </div>
+      </section>
+
+      <section class="lab-panel">
+        <div class="lab-panel-head">
+          <h2>Sweep a variable</h2>
+          <select id="sweepVar">
+            <option value="hitOdds">Buy-at odds</option>
+            <option value="lastMinutes">Last minutes</option>
+            <option value="minDistance">Min |BTC−PTB|</option>
+            <option value="minVolume">Min volume</option>
+            <option value="minVenues">Min venues</option>
+          </select>
+        </div>
+        <div class="sweep-legend">
+          <span><span class="swatch-line pnl"></span>Net PnL</span>
+          <span><span class="swatch-line win"></span>Win rate</span>
+          <span><span class="swatch-dot cur"></span>Current</span>
+          <span><span class="swatch-dot best"></span>Best</span>
+        </div>
+        <svg id="sweepChart" class="lab-chart" viewBox="0 0 800 220" preserveAspectRatio="none"></svg>
+        <div class="lab-hint">Holds every other variable fixed. Click a point to jump the slider there.</div>
+      </section>
+
+      <section class="lab-panel">
+        <div class="lab-panel-head">
+          <h2>Find best settings</h2>
+          <button type="button" id="findBestBtn" class="lab-btn-primary">Search enabled filters</button>
+          <span class="muted" id="searchStatus"></span>
+        </div>
+        <div class="lab-progress" id="searchProgress" hidden><div class="lab-progress-fill" id="searchProgressFill"></div></div>
+        <table class="bt-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Net PnL</th>
+              <th>Win rate</th>
+              <th>Trades</th>
+              <th>Settings</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="bestBody">
+            <tr><td colspan="6" class="muted">Click "Search enabled filters" for a coarse grid search.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="lab-panel">
+        <div class="lab-panel-head">
+          <h2>Trades</h2>
+          <span class="muted" id="tradesMeta"></span>
+        </div>
+        <div class="lab-trade-toolbar">
+          <label class="lab-toolbar-field">
+            <span>Search</span>
+            <input type="text" id="tradeSearch" class="lab-trade-search" placeholder="Filter by date or slug…" />
+          </label>
+          <label class="lab-toolbar-field">
+            <span>Side</span>
+            <select id="tradeSideFilter">
+              <option value="any">Any</option>
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+            </select>
+          </label>
+          <label class="lab-toolbar-field">
+            <span>Result</span>
+            <select id="tradeResultFilter">
+              <option value="any">Any</option>
+              <option value="win">Wins</option>
+              <option value="loss">Losses</option>
+            </select>
+          </label>
+        </div>
+        <div class="bt-table-wrap lab-trade-wrap">
+          <table class="bt-table lab-trades" id="tradesTable">
+            <thead>
+              <tr>
+                <th data-sort="t">Window</th>
+                <th data-sort="side">Result</th>
+                <th data-sort="fill">Fill</th>
+                <th data-sort="shares">Shares</th>
+                <th data-sort="fee">Fee</th>
+                <th data-sort="pnl">PnL</th>
+                <th data-sort="elapsed" title="Seconds after the window opened when the entry filters first matched, out of 5:00 total. Higher = closer to expiry.">Entered at ⓘ</th>
+                <th data-sort="upMid">UP mid</th>
+                <th data-sort="btcMinusPtb">BTC−PTB</th>
+                <th data-sort="twapMinusPtb">TWAP−PTB</th>
+                <th data-sort="volume">Vol</th>
+              </tr>
+            </thead>
+            <tbody id="tradesBody">
+              <tr><td colspan="11" class="muted">Loading tape…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="lab-pagination">
+          <span class="muted" id="tradesPageLabel"></span>
+          <div class="lab-pagination-btns">
+            <button type="button" id="tradesPrevBtn" class="lab-btn-secondary">Prev</button>
+            <button type="button" id="tradesNextBtn" class="lab-btn-secondary">Next</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

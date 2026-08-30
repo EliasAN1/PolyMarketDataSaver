@@ -18,19 +18,21 @@ Edit `.env` with the **Polymarket proxy / funder** address that holds **pUSD**, 
 
 ## Config
 
-[`config.toml`](config.toml) knobs (AND together; volume is not used):
+[`config.toml`](config.toml) knobs match **Strategy Lab** (AND together; volume is not streamed in the trader):
 
 | Knob | Meaning |
 | --- | --- |
-| `use_entry_last` + `entry_last_minutes` | Only arm in the last N minutes of the window |
-| `odds_min` / `odds_max` | Chosen side's **ask** must **cross into** this band *after* last-N starts. Already sitting there when the period opens is ignored. FAK limit = `odds_max` |
-| `use_btc_distance` + `min_btc_away` | BTC (Binance spot, else Coinbase, else Bybit) at least X from PTB. Side follows BTC vs PTB |
+| `elapsed_from_min` / `elapsed_to_min` | Minutes from window open. `2.5`–`3.0` is 2:30–3:00. Last 3 minutes of a 5m window is `2.0`–`5.0`. |
+| `odds_min` / `odds_max` | Chosen side's **mid** must *enter* this band during the elapsed window (first tick is baseline only). **Ask** must also sit in the band (point underdog: ask ≤ level). FAK limit = `odds_max` so you do not pay 0.70 on a 0.35 cross. |
+| `use_btc_distance` + `min_btc_away` + `max_btc_away` | \|BTC−PTB\| between min and max dollars. Omit `max_btc_away` for “at least min”. Side follows BTC vs PTB |
 | `use_twap` | 60s TWAP must agree with that side |
 | `use_venues` + `min_venues` | At least N of {binance_spot, coinbase_spot, bybit_spot, binance_futures} agree |
 | `stake_usd` | pUSD to spend on the FAK |
 | `min_seconds_left` | Do not send if the window is about to close |
 
-A single “enter at 0.25” is `odds_min = 0.01`, `odds_max = 0.25`. A favorite band is e.g. `0.75`–`0.99`.
+If you omit both elapsed keys, `use_entry_last` + `entry_last_minutes` still means “last N minutes”.
+
+A band of `0.20`–`0.30` is the Lab default. A point underdog is `odds_min = odds_max = 0.35` (cross 0.35, pay at most 0.35). A favorite band is e.g. `0.80`–`0.90`.
 
 If BTC-distance is off, the side is whichever book sits in the odds band (cheaper side when `odds_max < 0.5`).
 

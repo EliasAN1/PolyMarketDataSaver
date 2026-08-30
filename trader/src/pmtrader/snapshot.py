@@ -33,9 +33,12 @@ class LiveSnapshot:
     spots: dict[str, float | None] = field(
         default_factory=lambda: {name: None for name in VENUE_SOURCES}
     )
-    # Ask was seen outside the odds band *after* the last-N entry window opened.
-    seen_outside_up: bool = False
-    seen_outside_down: bool = False
+    # Mid history for Lab-style "enter the odds band" (first in-watch tick is baseline).
+    prev_up_mid: float | None = None
+    prev_down_mid: float | None = None
+    mid_entered_up: bool = False
+    mid_entered_down: bool = False
+    in_watch: bool = False
 
     def reset_window(
         self,
@@ -59,8 +62,7 @@ class LiveSnapshot:
         self.down_ask = None
         self.up_mid = None
         self.down_mid = None
-        self.seen_outside_up = False
-        self.seen_outside_down = False
+        self.clear_odds_memory()
 
     def set_ptb(self, value: str | float | None, source: str) -> None:
         parsed = _f(value)
@@ -114,14 +116,35 @@ class LiveSnapshot:
     def ask_for(self, side: str) -> float | None:
         return self.up_ask if side == "up" else self.down_ask
 
-    def seen_outside(self, side: str) -> bool:
-        return self.seen_outside_up if side == "up" else self.seen_outside_down
+    def mid_for(self, side: str) -> float | None:
+        mid = self.up_mid if side == "up" else self.down_mid
+        if mid is not None:
+            return mid
+        return self.ask_for(side)
 
-    def mark_outside(self, side: str) -> None:
+    def clear_odds_memory(self) -> None:
+        self.prev_up_mid = None
+        self.prev_down_mid = None
+        self.mid_entered_up = False
+        self.mid_entered_down = False
+        self.in_watch = False
+
+    def remember_mids(self) -> None:
+        up = self.mid_for("up")
+        down = self.mid_for("down")
+        if up is not None:
+            self.prev_up_mid = up
+        if down is not None:
+            self.prev_down_mid = down
+
+    def mid_entered(self, side: str) -> bool:
+        return self.mid_entered_up if side == "up" else self.mid_entered_down
+
+    def mark_mid_entered(self, side: str) -> None:
         if side == "up":
-            self.seen_outside_up = True
+            self.mid_entered_up = True
         else:
-            self.seen_outside_down = True
+            self.mid_entered_down = True
 
     def token_for(self, side: str) -> str:
         return self.up_token_id if side == "up" else self.down_token_id

@@ -31,6 +31,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
     else:
         state = f"skip:{decision.reason}"
 
+    armed, from_s, to_s = cfg.watch_span_s(_duration(snap))
     return {
         "running": True,
         "slug": snap.slug,
@@ -45,23 +46,36 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "twap_delta": twap_delta,
         "up_ask": snap.up_ask,
         "down_ask": snap.down_ask,
+        "up_mid": snap.up_mid,
+        "down_mid": snap.down_mid,
         "venues_up": snap.venues_on_side("up"),
         "venues_down": snap.venues_on_side("down"),
         "config": {
             "odds_min": cfg.odds_min,
             "odds_max": cfg.odds_max,
+            "elapsed_from_min": cfg.elapsed_from_min,
+            "elapsed_to_min": cfg.elapsed_to_min,
             "entry_last_minutes": cfg.entry_last_minutes,
             "use_entry_last": cfg.use_entry_last,
             "min_seconds_left": cfg.min_seconds_left,
             "min_btc_away": cfg.min_btc_away,
+            "max_btc_away": cfg.max_btc_away,
             "use_btc_distance": cfg.use_btc_distance,
             "use_twap": cfg.use_twap,
             "use_venues": cfg.use_venues,
             "min_venues": cfg.min_venues,
             "stake_usd": cfg.stake_usd,
+            "watch_from_s": from_s if armed else 0,
+            "watch_to_s": to_s,
         },
         "checks": _checks(snap, cfg, now_s=now, traded=traded, side=side),
     }
+
+
+def _duration(snap: LiveSnapshot) -> float:
+    if snap.window_end > snap.window_start:
+        return float(snap.window_end - snap.window_start)
+    return 300.0
 
 
 def _implied_side(snap: LiveSnapshot, cfg: TraderConfig, btc_delta: float | None) -> str | None:
@@ -81,20 +95,29 @@ def _checks(
     side: str | None,
 ) -> list[dict[str, Any]]:
     left = (snap.window_end - now_s) if snap.window_end else None
+    elapsed = (now_s - snap.window_start) if snap.window_start else None
     in_window = snap.window_end > 0
     not_late = left is not None and left >= cfg.min_seconds_left
-    in_last = (not cfg.use_entry_last) or (
-        left is not None and left <= cfg.entry_last_minutes * 60
+    armed, from_s, to_s = cfg.watch_span_s(_duration(snap))
+    in_elapsed = (not armed) or (
+        elapsed is not None and from_s <= elapsed <= to_s
     )
     has_ptb = snap.ptb is not None
     btc_delta = snap.btc_minus_ptb()
-    btc_ok = (
-        not cfg.use_btc_distance
-        or (btc_delta is not None and abs(btc_delta) >= cfg.min_btc_away)
+    abs_d = None if btc_delta is None else abs(btc_delta)
+    btc_ok = (not cfg.use_btc_distance) or (
+        abs_d is not None
+        and abs_d >= cfg.min_btc_away
+        and (cfg.max_btc_away is None or abs_d <= cfg.max_btc_away)
     )
     ask = snap.ask_for(side) if side else None
-    in_band = ask is not None and cfg.odds_min <= ask <= cfg.odds_max
-    crossed = bool(side and snap.seen_outside(side))
+    mid = snap.mid_for(side) if side else None
+    in_ask_band = ask is not None and (
+        (cfg.odds_min < cfg.odds_max and cfg.odds_min <= ask <= cfg.odds_max)
+        or (cfg.odds_min == cfg.odds_max and cfg.odds_min < 0.5 and ask <= cfg.odds_min)
+        or (cfg.odds_min == cfg.odds_max and cfg.odds_min >= 0.5 and cfg.odds_min <= ask <= cfg.odds_max)
+    )
+    crossed = bool(side and snap.mid_entered(side))
     twap_delta = snap.twap_minus_ptb()
     twap_ok = (
         not cfg.use_twap
@@ -106,12 +129,19 @@ def _checks(
     )
     venues = snap.venues_on_side(side) if side else 0
     venues_ok = (not cfg.use_venues) or venues >= cfg.min_venues
+    from_clock = _clock(from_s)
+    to_clock = _clock(to_s)
+    btc_label = f"|BTC−PTB| ${cfg.min_btc_away:g}"
+    if cfg.max_btc_away is not None:
+        btc_label += f"–${cfg.max_btc_away:g}"
+    else:
+        btc_label += "+"
 
     return [
         {
             "id": "time",
-            "label": "Last-N window",
-            "ok": in_window and in_last and not_late,
+            "label": f"Elapsed {from_clock}–{to_clock}",
+            "ok": in_window and in_elapsed and not_late,
             "value": f"{int(left)}s left" if left is not None else "no window",
             "enabled": True,
         },
@@ -124,23 +154,25 @@ def _checks(
         },
         {
             "id": "btc",
-            "label": f"BTC vs PTB ≥ ${cfg.min_btc_away:g}",
+            "label": btc_label,
             "ok": btc_ok,
             "value": _signed(btc_delta, 1),
             "enabled": cfg.use_btc_distance,
         },
         {
             "id": "odds",
-            "label": f"Ask in {cfg.odds_min:.2f}–{cfg.odds_max:.2f}",
-            "ok": in_band,
-            "value": _odds_pair(snap.up_ask, snap.down_ask, side),
+            "label": f"Ask fillable {cfg.odds_min:.2f}–{cfg.odds_max:.2f}",
+            "ok": in_ask_band,
+            "value": _odds_pair(snap.up_ask, snap.down_ask, side, prefix="ask"),
             "enabled": True,
         },
         {
             "id": "cross",
-            "label": "Ask crossed into band",
+            "label": f"Mid entered {cfg.odds_min:.2f}–{cfg.odds_max:.2f}",
             "ok": crossed,
-            "value": "yes" if crossed else "waiting",
+            "value": _odds_pair(snap.up_mid, snap.down_mid, side, prefix="mid")
+            if mid is not None or snap.up_mid is not None
+            else ("yes" if crossed else "waiting"),
             "enabled": True,
         },
         {
@@ -167,6 +199,11 @@ def _checks(
     ]
 
 
+def _clock(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    return f"{total // 60}:{total % 60:02d}"
+
+
 def _num(value: float | None, digits: int) -> str:
     if value is None:
         return "—"
@@ -179,10 +216,17 @@ def _signed(value: float | None, digits: int) -> str:
     return f"{value:+,.{digits}f}"
 
 
-def _odds_pair(up: float | None, down: float | None, side: str | None) -> str:
+def _odds_pair(
+    up: float | None,
+    down: float | None,
+    side: str | None,
+    *,
+    prefix: str = "",
+) -> str:
     def fmt(v: float | None) -> str:
         return f"{v:.2f}" if v is not None else "—"
 
     mark_up = "UP" if side == "up" else "up"
     mark_down = "DOWN" if side == "down" else "down"
-    return f"{mark_up} {fmt(up)} · {mark_down} {fmt(down)}"
+    body = f"{mark_up} {fmt(up)} · {mark_down} {fmt(down)}"
+    return f"{prefix} {body}".strip() if prefix else body

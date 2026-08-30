@@ -1,0 +1,107 @@
+"""Serve the Trade Analyzer static UI and JSON APIs."""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+
+from pmtrader.config import env
+from pmtrader.live import live_payload
+from pmtrader.profile import collect_profile
+from pmtrader.tradelog import analyzer_records
+
+logger = logging.getLogger(__name__)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any | None = None) -> FastAPI:
+    app = FastAPI(title="pmtrader")
+    app.state.log_path = log_path
+    app.state.order_client = order_client
+    app.state.trader = trader
+
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/styles.css")
+    def styles() -> FileResponse:
+        return FileResponse(STATIC_DIR / "styles.css", media_type="text/css")
+
+    @app.get("/api/config")
+    def api_config() -> dict[str, Any]:
+        return {
+            "cashout": False,
+            "cashout_invert_mult": 2,
+            "cashout_orig_roi": 0.8,
+            "stake_usd": None,
+        }
+
+    @app.get("/api/logs/trades.jsonl")
+    def api_trades() -> PlainTextResponse:
+        rows = analyzer_records(app.state.log_path)
+        body = "\n".join(json.dumps(row, default=str) for row in rows)
+        if body:
+            body += "\n"
+        return PlainTextResponse(body, media_type="application/x-ndjson")
+
+    @app.get("/api/logs/balance.json")
+    def api_balance() -> JSONResponse:
+        client = app.state.order_client
+        payload: dict[str, Any] = {"wallet": env("POLYMARKET_WALLET_ADDRESS") or env("POLYMARKET_FUNDER")}
+        if client is None:
+            return JSONResponse(payload)
+        try:
+            from py_clob_client_v2.clob_types import AssetType, BalanceAllowanceParams
+
+            raw = client.get_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL))
+            if isinstance(raw, dict):
+                payload.update(raw)
+                bal = raw.get("balance") or raw.get("balance_pusd")
+                if bal is not None:
+                    payload["balance_pusd"] = float(bal) / (1e6 if float(bal) > 1000 else 1)
+        except Exception as exc:
+            logger.warning("balance fetch failed: %s", exc)
+            payload["error"] = str(exc)
+        return JSONResponse(payload)
+
+    @app.get("/api/logs/books")
+    def api_books() -> dict[str, list[str]]:
+        return {"slugs": []}
+
+    @app.get("/api/live")
+    def api_live() -> JSONResponse:
+        return JSONResponse(live_payload(app.state.trader))
+
+    @app.get("/api/profile")
+    def api_profile() -> JSONResponse:
+        return JSONResponse(collect_profile(app.state.order_client))
+
+    app.mount("/js", StaticFiles(directory=STATIC_DIR / "js"), name="js")
+    return app
+
+
+def serve_background(
+    *,
+    log_path: Path,
+    order_client: Any | None,
+    host: str,
+    port: int,
+    trader: Any | None = None,
+) -> None:
+    import threading
+    import uvicorn
+
+    app = create_app(log_path=log_path, order_client=order_client, trader=trader)
+    config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, name="pmtrader-ui", daemon=True)
+    thread.start()
+    logger.info("Analyzer UI http://%s:%s", host, port)

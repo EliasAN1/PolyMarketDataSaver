@@ -1,0 +1,22 @@
+# One FAK buy per 5m window when every enabled filter is true.
+# Limit price is always odds_max (worst you will pay).
+
+entry_last_minutes = 3.6
+use_entry_last = true
+
+# Ask must *reach* [odds_min, odds_max] after the last-N window opens.
+# Already sitting in the band when last-N starts is ignored (no buy).
+# Single "enter at 0.25": odds_min = 0.01, odds_max = 0.25
+odds_min = 0.82
+odds_max = 0.92
+
+use_btc_distance = true
+min_btc_away = 100
+
+use_twap = false
+use_venues = false
+min_venues = 2
+
+stake_usd = 100
+min_seconds_left = 3
+tick_size = "0.01"

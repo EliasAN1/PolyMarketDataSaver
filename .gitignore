@@ -15,6 +15,9 @@ __pycache__/
 venv/
 .env
 .env.*
+!.env.example
+!trader/.env.example
+
 
 # PyInstaller
 build/
@@ -25,3 +28,8 @@ dist/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# Standalone trader secrets and logs
+trader/.env
+trader/logs/
+trader/.venv/

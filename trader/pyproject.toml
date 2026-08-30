@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmtrader"
+version = "0.1.0"
+description = "Live Polymarket BTC 5m trader: combo filters and CLOB FAK buys"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "websockets>=12.0",
+    "py-clob-client-v2",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.scripts]
+pmtrader = "pmtrader.__main__:main"
+pmtrader-ui = "pmtrader.ui.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pmtrader = ["ui/static/**/*"]

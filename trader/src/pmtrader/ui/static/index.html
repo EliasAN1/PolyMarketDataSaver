@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="theme-color" content="#060a09" />
+  <title>pmtrader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell is-loading">
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span class="brand-name">Centionaire</span>
+      </div>
+      <div class="top-actions">
+        <button type="button" id="profile-btn" class="btn ghost" aria-label="Profile">Profile</button>
+        <button type="button" id="refresh-btn" class="btn ghost" aria-label="Refresh">↻</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="hero" class="hero is-empty">
+        <div class="hero-inner">
+          <p id="hero-greeting" class="hero-greeting">Good evening</p>
+          <div class="hero-row">
+            <div class="hero-net-wrap">
+              <h1 id="hero-net" class="hero-net">—</h1>
+              <span id="hero-delta" class="hero-delta" hidden></span>
+            </div>
+            <span id="hero-badge" class="hero-badge"></span>
+          </div>
+          <p id="hero-sub" class="hero-sub"></p>
+          <div class="hero-metrics">
+            <article class="hero-metric">
+              <span class="metric-label">Balance</span>
+              <strong id="stat-balance" class="metric-value">—</strong>
+            </article>
+            <article class="hero-metric">
+              <span class="metric-label">Win rate</span>
+              <strong id="stat-win-rate" class="metric-value">—</strong>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <div id="window-section" class="accordion is-open" data-section="window">
+        <button type="button" class="accordion-trigger" aria-expanded="true">
+          <span class="accordion-label">Current window</span>
+          <span id="window-status" class="window-status">—</span>
+        </button>
+        <div class="accordion-panel">
+          <div class="accordion-content">
+            <div id="window-inner" class="window-live"></div>
+          </div>
+        </div>
+      </div>
+
+      <section id="recap-section" class="recap" aria-label="Recent trades" hidden>
+        <div id="recap-inner"></div>
+      </section>
+
+      <section id="trades-section" class="trades-block" hidden>
+        <div class="trades-head">
+          <h2 class="trades-title">Trades</h2>
+          <span id="trades-count" class="trades-count"></span>
+        </div>
+        <div class="table-scroll">
+          <table id="trades-table" class="data-table trades-table">
+            <thead id="trades-thead"></thead>
+            <tbody id="trades-tbody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="empty-state" class="empty" hidden>No trades yet.</p>
+    </main>
+  </div>
+
+  <div id="profile-overlay" class="profile-overlay" hidden>
+    <div class="profile-window" role="dialog" aria-labelledby="profile-title">
+      <header class="profile-head">
+        <h2 id="profile-title">Profile</h2>
+        <div class="profile-head-actions">
+          <button type="button" id="profile-refresh" class="btn ghost" aria-label="Refresh profile">↻</button>
+          <button type="button" id="profile-close" class="btn ghost" aria-label="Close">✕</button>
+        </div>
+      </header>
+      <p id="profile-status" class="profile-status">Loading…</p>
+      <div id="profile-body" class="profile-body"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

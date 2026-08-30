@@ -196,11 +196,16 @@ class BacktestRequest(BaseModel):
     fee_rate: float = Field(default=CRYPTO_TAKER_FEE_RATE, ge=0, le=1)
     entry_after_s: float = Field(default=15.0, ge=0, le=300)
     min_distance: float = Field(default=10.0, ge=0)
+    max_distance: float | None = Field(default=None, ge=0)
     max_ask: float = Field(default=0.75, gt=0, lt=1)
     cheap_ask: float = Field(default=0.55, gt=0, lt=1)
     hit_odds: float = Field(default=0.25, gt=0, lt=1)
+    odds_lo: float | None = Field(default=None, gt=0, lt=1)
+    odds_hi: float | None = Field(default=None, gt=0, lt=1)
     last_minutes: float = Field(default=3.0, gt=0, le=5)
     use_last_minutes: bool = True
+    elapsed_from_min: float | None = Field(default=None, ge=0, le=5)
+    elapsed_to_min: float | None = Field(default=None, ge=0, le=5)
     use_odds: bool = True
     use_spot: bool = False
     use_twap: bool = False
@@ -221,11 +226,16 @@ class BacktestRequest(BaseModel):
             fee_rate=self.fee_rate,
             entry_after_s=self.entry_after_s,
             min_distance=self.min_distance,
+            max_distance=self.max_distance,
             max_ask=self.max_ask,
             cheap_ask=self.cheap_ask,
             hit_odds=self.hit_odds,
+            odds_lo=self.odds_lo,
+            odds_hi=self.odds_hi,
             last_minutes=self.last_minutes,
             use_last_minutes=self.use_last_minutes,
+            elapsed_from_min=self.elapsed_from_min,
+            elapsed_to_min=self.elapsed_to_min,
             use_odds=self.use_odds,
             use_spot=self.use_spot,
             use_twap=self.use_twap,
@@ -365,6 +375,11 @@ def app_css() -> FileResponse:
 @app.get("/static/app.js")
 def app_js() -> FileResponse:
     return _no_cache_file(STATIC_DIR / "app.js", "application/javascript")
+
+
+@app.get("/static/lightweight-charts.js")
+def lightweight_charts_js() -> FileResponse:
+    return _no_cache_file(STATIC_DIR / "lightweight-charts.js", "application/javascript")
 
 
 @app.get("/static/backtest.css")

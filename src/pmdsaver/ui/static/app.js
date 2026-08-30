@@ -117,6 +117,12 @@
     if (el.textContent !== text) el.textContent = text;
   }
 
+  function showError(msg) {
+    if (!els.errorBox) return;
+    els.errorBox.hidden = !msg;
+    els.errorBox.textContent = msg || "";
+  }
+
   function setClass(el, name, on) {
     el.classList.toggle(name, on);
   }
@@ -140,6 +146,7 @@
       showError("Chart library failed to load.");
       return;
     }
+    try {
     const dashed = LC.LineStyle ? LC.LineStyle.Dashed : 2;
     const dotted = LC.LineStyle ? LC.LineStyle.Dotted : 1;
     chart = LC.createChart(els.chart, {
@@ -223,6 +230,10 @@
     };
     resize();
     new ResizeObserver(resize).observe(els.chart);
+    } catch (err) {
+      chart = null;
+      showError(`Chart failed to start: ${err && err.message ? err.message : err}`);
+    }
   }
 
   function resetLastTimes() {
@@ -247,6 +258,7 @@
   }
 
   function applySeriesData(key, s, rows, valueKey) {
+    if (!s || typeof s.setData !== "function") return;
     const data = uniqueLine(rows, valueKey);
     s.setData(data);
     if (data.length) lastTimes[key] = data[data.length - 1].time;
@@ -287,7 +299,7 @@
     applySeriesData("twap", series.twap, data.chart_twap, "value");
     applySeriesData("volume", series.volume, data.chart_volume, "value");
     setPtb(currentWindow?.price_to_beat);
-    if (series.twap.setMarkers) {
+    if (series.twap && series.twap.setMarkers) {
       const start = Number(currentWindow?.window_start);
       if (Number.isFinite(start) && currentWindow?.price_to_beat_rtds) {
         series.twap.setMarkers([{
@@ -362,18 +374,22 @@
 
   function flush() {
     rafId = 0;
-    if (pendingSnapshot) {
-      applySnapshot(pendingSnapshot);
-      pendingSnapshot = null;
-    }
-    if (
-      pendingAppends.odds.length ||
-      pendingAppends.twap.length ||
-      pendingAppends.volume.length ||
-      Object.keys(pendingAppends.prices).length
-    ) {
-      applyAppends(pendingAppends);
-      pendingAppends = emptyAppends();
+    try {
+      if (pendingSnapshot) {
+        applySnapshot(pendingSnapshot);
+        pendingSnapshot = null;
+      }
+      if (
+        pendingAppends.odds.length ||
+        pendingAppends.twap.length ||
+        pendingAppends.volume.length ||
+        Object.keys(pendingAppends.prices).length
+      ) {
+        applyAppends(pendingAppends);
+        pendingAppends = emptyAppends();
+      }
+    } catch (err) {
+      showError(err && err.message ? err.message : String(err));
     }
     if (latestHero) renderHero(latestHero);
   }
@@ -561,19 +577,61 @@
     showError("");
   }
 
+  let lastLiveMsgAt = 0;
+
+  function noteLiveMessage() {
+    lastLiveMsgAt = Date.now();
+  }
+
+  async function fillFromDatabase() {
+    if (!followLive) return;
+    try {
+      const status = await fetchJson("/api/status");
+      if (!status.window) {
+        setText(els.subtitle, "No windows in this database yet");
+        showError("This process has no collected windows. Keep pmdsaver.exe running, or copy data\\pmdsaver.db next to the exe.");
+        return;
+      }
+      const seriesData = await fetchJson(`/api/series?window_id=${status.window.id}&points=800`);
+      queueMessage({
+        type: "snapshot",
+        connected: true,
+        window: status.window,
+        latest_odds: status.latest_odds,
+        latest_prices: status.latest_prices,
+        latest_volume: status.latest_volume,
+        ingest: { odds_per_sec: 0, prices_per_sec: 0, prices_by_source: {} },
+        chart_odds: seriesData.odds || [],
+        chart_prices: seriesData.prices || {},
+        chart_twap: seriesData.twap || [],
+        chart_volume: seriesData.volume || [],
+        recent_odds: [],
+      });
+      setFeed("database", "live");
+      showError("");
+    } catch (err) {
+      showError(err.message || String(err));
+    }
+  }
+
   function connectLive() {
     if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
     const proto = location.protocol === "https:" ? "wss" : "ws";
     socket = new WebSocket(`${proto}://${location.host}/ws/live`);
-    socket.onopen = () => setFeed("websocket", "live");
+    socket.onopen = () => {
+      noteLiveMessage();
+      setFeed("websocket", "live");
+    };
     socket.onmessage = (event) => {
       if (!followLive) return;
+      noteLiveMessage();
       const data = JSON.parse(event.data);
       if (data.connected === false) {
         setFeed("collector offline", "offline");
-        showError("Collector is not connected. Run python -m pmdsaver.");
+        showError("Collector is not connected. Live ticks need pmdsaver.exe (or python -m pmdsaver). Showing last saved window until then.");
+        fillFromDatabase();
       } else {
         setFeed("websocket", "live");
         showError("");
@@ -614,11 +672,19 @@
     }
   });
 
-  ensureChart();
+  connectLive();
+  fillFromDatabase();
+  try {
+    ensureChart();
+  } catch (err) {
+    showError(err && err.message ? err.message : String(err));
+  }
   setInterval(tickClock, 250);
   loadWindows().catch(() => {});
-  connectLive();
   setInterval(() => {
     if (followLive) loadWindows().catch(() => {});
   }, 15000);
+  setInterval(() => {
+    if (followLive && Date.now() - lastLiveMsgAt > 2500) fillFromDatabase();
+  }, 2000);
 })();

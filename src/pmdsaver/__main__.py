@@ -20,6 +20,18 @@ from pmdsaver.runtime import data_dir, is_frozen
 from pmdsaver.ui.server import app as ui_app
 
 
+def _pause_if_frozen(message: str | None = None) -> None:
+    """Keep the console open after a double-click crash so the error is readable."""
+    if not is_frozen():
+        return
+    if message:
+        print(message, file=sys.stderr)
+    try:
+        input("Press Enter to close this window...")
+    except EOFError:
+        pass
+
+
 def main() -> None:
     multiprocessing.freeze_support()
     # Let the same exe double as the merge tool: `pmdsaver.exe merge <other.db>`.
@@ -87,7 +99,7 @@ def main() -> None:
         except (NotImplementedError, RuntimeError, ValueError):
             signal.signal(sig, _on_signal)
 
-    async def _run() -> None:
+    async def _run() -> bool:
         collect_task = asyncio.create_task(collector.run(), name="collector")
         serve_task = asyncio.create_task(server.serve(), name="ui")
         if open_browser:
@@ -109,17 +121,35 @@ def main() -> None:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(collect_task, serve_task, return_exceptions=True)
+        return bool(getattr(server, "started", False))
 
+    started = False
     try:
-        loop.run_until_complete(_run())
+        started = loop.run_until_complete(_run())
     except KeyboardInterrupt:
         _request_shutdown()
         try:
             loop.run_until_complete(collector.shutdown())
         except Exception:
             pass
+    except Exception:
+        logging.getLogger("pmdsaver").exception("pmdsaver crashed")
+        if not loop.is_closed():
+            loop.close()
+        _pause_if_frozen()
+        raise
     finally:
-        loop.close()
+        if not loop.is_closed():
+            loop.close()
+
+    if not started:
+        _pause_if_frozen(
+            f"Could not start the dashboard on http://{host}:{port}.\n"
+            "Usual cause: that port is already in use (another pmdsaver still running).\n"
+            "Close the other window, or in PowerShell:\n"
+            f"  $env:UI_PORT = '8081'\n"
+            "  .\\pmdsaver.exe"
+        )
 
 
 if __name__ == "__main__":

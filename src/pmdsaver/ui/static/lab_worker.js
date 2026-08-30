@@ -3,7 +3,7 @@
  * re-sends the (large) tape payload — only params are exchanged after the
  * initial load.
  */
-importScripts("/static/lab_engine.js?v=1");
+importScripts("/static/lab_engine.js?v=4");
 
 let windows = [];
 
@@ -69,6 +69,25 @@ function runSearch(baseParams, dims, minTrades) {
     let processed = 0;
     while (processed < BATCH) {
       const params = currentParams();
+      if (
+        (params.oddsLo != null &&
+          params.oddsHi != null &&
+          Number(params.oddsLo) > Number(params.oddsHi)) ||
+        (params.elapsedFromMin != null &&
+          params.elapsedToMin != null &&
+          Number(params.elapsedFromMin) > Number(params.elapsedToMin)) ||
+        (params.minDistance != null &&
+          params.maxDistance != null &&
+          Number(params.minDistance) > Number(params.maxDistance))
+      ) {
+        done++;
+        processed++;
+        if (!advance()) {
+          finish();
+          return;
+        }
+        continue;
+      }
       const { summary } = self.LabEngine.evaluate(windows, params);
       if (summary.trades >= minTrades) {
         results.push({ params, summary });

@@ -67,9 +67,9 @@ const state = {
  * ------------------------------------------------------------------ */
 
 const FILTER_PAIRS = [
-  { toggle: "useLastMinutes", range: "lastMinutesRange", numInput: "lastMinutesNum", filter: "filterLastMinutes" },
-  { toggle: "useOdds", range: "hitOddsRange", numInput: "hitOddsNum", filter: "filterOdds" },
-  { toggle: "useSpot", range: "minDistanceRange", numInput: "minDistanceNum", filter: "filterSpot" },
+  { toggle: "useLastMinutes", extras: ["elapsedFromRange", "elapsedFromNum", "elapsedToRange", "elapsedToNum"], filter: "filterLastMinutes" },
+  { toggle: "useOdds", extras: ["oddsLoRange", "oddsLoNum", "oddsHiRange", "oddsHiNum"], filter: "filterOdds" },
+  { toggle: "useSpot", extras: ["minDistanceRange", "minDistanceNum", "maxDistanceRange", "maxDistanceNum"], filter: "filterSpot" },
   { toggle: "useTwap", range: null, numInput: null, filter: "filterTwap" },
   { toggle: "useVolume", range: "minVolumeRange", numInput: "minVolumeNum", filter: "filterVolume" },
   { toggle: "useVenues", range: "minVenuesRange", numInput: "minVenuesNum", filter: "filterVenues" },
@@ -96,6 +96,46 @@ function applyFilterEnabled(pair) {
   if (filterEl) filterEl.classList.toggle("disabled", !enabled);
   if (pair.range) $(pair.range).disabled = !enabled;
   if (pair.numInput) $(pair.numInput).disabled = !enabled;
+  for (const id of pair.extras || []) {
+    const el = $(id);
+    if (el) el.disabled = !enabled;
+  }
+}
+
+function setOrderedBound(loNum, hiNum, loRange, hiRange, which, raw, min, max, digits) {
+  let lo = num(loNum, min);
+  let hi = num(hiNum, max);
+  let value = Number(raw);
+  if (!Number.isFinite(value)) return;
+  value = Math.min(max, Math.max(min, value));
+  if (which === "lo") {
+    lo = value;
+    if (lo > hi) hi = lo;
+  } else {
+    hi = value;
+    if (hi < lo) lo = hi;
+  }
+  const fmt = (v) => (digits === 0 ? String(Math.round(v)) : Number(v).toFixed(digits));
+  $(loNum).value = fmt(lo);
+  $(hiNum).value = fmt(hi);
+  $(loRange).value = String(lo);
+  $(hiRange).value = String(hi);
+}
+
+function wireOrderedBand(loRange, loNum, hiRange, hiNum, min, max, digits) {
+  for (const [rangeId, numId, which] of [
+    [loRange, loNum, "lo"],
+    [hiRange, hiNum, "hi"],
+  ]) {
+    $(rangeId).addEventListener("input", () => {
+      setOrderedBound(loNum, hiNum, loRange, hiRange, which, $(rangeId).value, min, max, digits);
+      scheduleRecompute();
+    });
+    $(numId).addEventListener("input", () => {
+      setOrderedBound(loNum, hiNum, loRange, hiRange, which, $(numId).value, min, max, digits);
+      scheduleRecompute();
+    });
+  }
 }
 
 function wireFilters() {
@@ -107,6 +147,9 @@ function wireFilters() {
     });
     applyFilterEnabled(pair);
   }
+  wireOrderedBand("elapsedFromRange", "elapsedFromNum", "elapsedToRange", "elapsedToNum", 0, 5, 1);
+  wireOrderedBand("oddsLoRange", "oddsLoNum", "oddsHiRange", "oddsHiNum", 0.01, 0.99, 2);
+  wireOrderedBand("minDistanceRange", "minDistanceNum", "maxDistanceRange", "maxDistanceNum", 0, 200, 0);
   for (const id of ["stake", "feeRate"]) {
     $(id).addEventListener("input", scheduleRecompute);
   }
@@ -123,11 +166,14 @@ function getParams() {
     feeRate: Math.max(0, num("feeRate", 0.07)),
     fillMode: $("fillMode").value,
     useLastMinutes: $("useLastMinutes").checked,
-    lastMinutes: num("lastMinutesNum", 3),
+    elapsedFromMin: num("elapsedFromNum", 2),
+    elapsedToMin: num("elapsedToNum", 5),
     useOdds: $("useOdds").checked,
-    hitOdds: num("hitOddsNum", 0.25),
+    oddsLo: num("oddsLoNum", 0.2),
+    oddsHi: num("oddsHiNum", 0.3),
     useSpot: $("useSpot").checked,
-    minDistance: num("minDistanceNum", 10),
+    minDistance: num("minDistanceNum", 5),
+    maxDistance: num("maxDistanceNum", 10),
     useTwap: $("useTwap").checked,
     useVolume: $("useVolume").checked,
     minVolume: num("minVolumeNum", 50),
@@ -140,9 +186,12 @@ function setParams(params) {
   const map = {
     stake: "stake",
     feeRate: "feeRate",
-    lastMinutes: ["lastMinutesRange", "lastMinutesNum"],
-    hitOdds: ["hitOddsRange", "hitOddsNum"],
+    elapsedFromMin: ["elapsedFromRange", "elapsedFromNum"],
+    elapsedToMin: ["elapsedToRange", "elapsedToNum"],
+    oddsLo: ["oddsLoRange", "oddsLoNum"],
+    oddsHi: ["oddsHiRange", "oddsHiNum"],
     minDistance: ["minDistanceRange", "minDistanceNum"],
+    maxDistance: ["maxDistanceRange", "maxDistanceNum"],
     minVolume: ["minVolumeRange", "minVolumeNum"],
     minVenues: ["minVenuesRange", "minVenuesNum"],
   };
@@ -160,6 +209,30 @@ function setParams(params) {
     if (params[t] != null) $(t).checked = params[t];
   }
   for (const pair of FILTER_PAIRS) applyFilterEnabled(pair);
+  const lo = num("oddsLoNum", 0.2);
+  const hi = num("oddsHiNum", 0.3);
+  if (lo > hi) {
+    $("oddsLoNum").value = hi.toFixed(2);
+    $("oddsHiNum").value = lo.toFixed(2);
+    $("oddsLoRange").value = String(hi);
+    $("oddsHiRange").value = String(lo);
+  }
+  const fromM = num("elapsedFromNum", 2);
+  const toM = num("elapsedToNum", 5);
+  if (fromM > toM) {
+    $("elapsedFromNum").value = toM.toFixed(1);
+    $("elapsedToNum").value = fromM.toFixed(1);
+    $("elapsedFromRange").value = String(toM);
+    $("elapsedToRange").value = String(fromM);
+  }
+  const dLo = num("minDistanceNum", 5);
+  const dHi = num("maxDistanceNum", 10);
+  if (dLo > dHi) {
+    $("minDistanceNum").value = String(Math.round(dHi));
+    $("maxDistanceNum").value = String(Math.round(dLo));
+    $("minDistanceRange").value = String(dHi);
+    $("maxDistanceRange").value = String(dLo);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -209,6 +282,73 @@ function renderKpis(summary) {
 
   $("kpiDrawdown").textContent = summary.maxDrawdown ? `-${summary.maxDrawdown.toFixed(4)}` : "0.0000";
   $("kpiDrawdownMeta").textContent = "peak-to-trough equity";
+
+  const days = summary.days || 0;
+  $("kpiTradesDay").textContent = summary.tradesPerDay == null ? "—" : summary.tradesPerDay.toFixed(1);
+  $("kpiTradesDayMeta").textContent = days
+    ? `${summary.participation == null ? "" : `${(summary.participation * 100).toFixed(0)}% of windows · `}${days} day${days === 1 ? "" : "s"}`
+    : "local calendar days in range";
+
+  const dayEl = $("kpiDayPnl");
+  dayEl.textContent = summary.avgDayPnl == null ? "—" : fmtPnl(summary.avgDayPnl);
+  dayEl.className = `value ${summary.avgDayPnl == null ? "" : summary.avgDayPnl >= 0 ? "up" : "down"}`;
+  const med = summary.medianDayPnl;
+  $("kpiDayPnlMeta").textContent = med == null
+    ? "including days with no trade"
+    : `median ${fmtPnl(med)} · ${summary.winningDays || 0}W / ${summary.losingDays || 0}L days`;
+
+  const pf = summary.profitFactor;
+  const pfEl = $("kpiPf");
+  if (pf == null) {
+    pfEl.textContent = "—";
+    pfEl.className = "value";
+    $("kpiPfMeta").textContent = "gross wins / gross losses";
+  } else if (!Number.isFinite(pf)) {
+    pfEl.textContent = "∞";
+    pfEl.className = "value up";
+    $("kpiPfMeta").textContent = "no losing trades";
+  } else {
+    pfEl.textContent = pf.toFixed(2);
+    pfEl.className = `value ${pf >= 1 ? "up" : "down"}`;
+    $("kpiPfMeta").textContent = "gross wins / gross losses";
+  }
+
+  const payoffEl = $("kpiPayoff");
+  if (summary.avgWin == null && summary.avgLoss == null) {
+    payoffEl.textContent = "—";
+    payoffEl.className = "value";
+    $("kpiPayoffMeta").textContent = "mean winner vs mean loser";
+  } else {
+    const w = summary.avgWin == null ? "—" : fmtPnl(summary.avgWin);
+    const l = summary.avgLoss == null ? "—" : `-${Number(summary.avgLoss).toFixed(4)}`;
+    payoffEl.textContent = `${w} / ${l}`;
+    payoffEl.className = "value";
+    $("kpiPayoffMeta").textContent = summary.payoff == null
+      ? "mean winner vs mean loser"
+      : `payoff ${summary.payoff.toFixed(2)}× · avg fill ${summary.avgFill == null ? "—" : summary.avgFill.toFixed(3)}`;
+  }
+
+  const best = summary.bestDay;
+  const worst = summary.worstDay;
+  const bestEl = $("kpiBestDay");
+  if (!best) {
+    bestEl.textContent = "—";
+    bestEl.className = "value";
+    $("kpiBestDayMeta").textContent = "local calendar day";
+  } else {
+    bestEl.textContent = fmtPnl(best.pnl);
+    bestEl.className = `value ${best.pnl >= 0 ? "up" : "down"}`;
+    $("kpiBestDayMeta").textContent = worst && worst.day !== best.day
+      ? `worst ${fmtPnl(worst.pnl)} · ${worst.day.slice(5)}`
+      : best.day;
+  }
+
+  $("kpiStreak").textContent = `${summary.maxWinStreak || 0}W / ${summary.maxLossStreak || 0}L`;
+  const upN = summary.upTrades || 0;
+  const downN = summary.downTrades || 0;
+  const upR = summary.upWinRate == null ? "—" : `${(summary.upWinRate * 100).toFixed(0)}%`;
+  const downR = summary.downWinRate == null ? "—" : `${(summary.downWinRate * 100).toFixed(0)}%`;
+  $("kpiStreakMeta").textContent = `UP ${upN} (${upR}) · DOWN ${downN} (${downR})`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -447,9 +587,12 @@ function wireTradesToolbar() {
  * ------------------------------------------------------------------ */
 
 const SWEEP_RANGES = {
-  hitOdds: { min: 0.05, max: 0.95, step: 0.02, requires: "useOdds" },
-  lastMinutes: { min: 0.5, max: 5, step: 0.1, requires: "useLastMinutes" },
-  minDistance: { min: 0, max: 150, step: 3, requires: "useSpot" },
+  oddsLo: { min: 0.01, max: 0.99, step: 0.02, requires: "useOdds" },
+  oddsHi: { min: 0.01, max: 0.99, step: 0.02, requires: "useOdds" },
+  elapsedFromMin: { min: 0, max: 5, step: 0.1, requires: "useLastMinutes" },
+  elapsedToMin: { min: 0, max: 5, step: 0.1, requires: "useLastMinutes" },
+  minDistance: { min: 0, max: 200, step: 3, requires: "useSpot" },
+  maxDistance: { min: 0, max: 200, step: 3, requires: "useSpot" },
   minVolume: { min: 0, max: 500, step: 10, requires: "useVolume" },
   minVenues: { min: 1, max: 4, step: 1, requires: "useVenues" },
 };
@@ -463,8 +606,15 @@ function scheduleSweep() {
 function runSweep() {
   if (!state.windows.length) return;
   const key = $("sweepVar").value;
-  const range = SWEEP_RANGES[key];
   const params = getParams();
+  const range = { ...SWEEP_RANGES[key] };
+  if (key === "oddsLo") range.max = params.oddsHi;
+  if (key === "oddsHi") range.min = params.oddsLo;
+  if (key === "elapsedFromMin") range.max = params.elapsedToMin;
+  if (key === "elapsedToMin") range.min = params.elapsedFromMin;
+  if (key === "minDistance") range.max = params.maxDistance;
+  if (key === "maxDistance") range.min = params.minDistance;
+  if (range.max < range.min) return;
   const values = [];
   for (let v = range.min; v <= range.max + 1e-9; v += range.step) {
     values.push(Math.round(v * 1000) / 1000);
@@ -584,7 +734,7 @@ function onSweepClick(event) {
  * ------------------------------------------------------------------ */
 
 function initWorker() {
-  state.worker = new Worker("/static/lab_worker.js?v=1");
+  state.worker = new Worker("/static/lab_worker.js?v=4");
   state.worker.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === "loaded") {
@@ -602,9 +752,12 @@ function initWorker() {
 }
 
 const SEARCH_DIMS = {
-  lastMinutes: { min: 0.5, max: 5, step: 1, requires: "useLastMinutes" },
-  hitOdds: { min: 0.05, max: 0.95, step: 0.1, requires: "useOdds" },
-  minDistance: { min: 0, max: 100, step: 20, requires: "useSpot" },
+  elapsedFromMin: { min: 0, max: 4.5, step: 0.5, requires: "useLastMinutes" },
+  elapsedToMin: { min: 0.5, max: 5, step: 0.5, requires: "useLastMinutes" },
+  oddsLo: { min: 0.05, max: 0.85, step: 0.1, requires: "useOdds" },
+  oddsHi: { min: 0.15, max: 0.95, step: 0.1, requires: "useOdds" },
+  minDistance: { min: 0, max: 80, step: 10, requires: "useSpot" },
+  maxDistance: { min: 10, max: 200, step: 20, requires: "useSpot" },
   minVolume: { min: 0, max: 300, step: 50, requires: "useVolume" },
   minVenues: { min: 1, max: 4, step: 1, requires: "useVenues" },
 };
@@ -630,11 +783,23 @@ function findBestSettings() {
   state.worker.postMessage({ type: "search", baseParams: params, dims, minTrades });
 }
 
+function fmtMinClock(min) {
+  const total = Math.max(0, Math.round(Number(min) * 60));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function describeParams(params) {
   const parts = [];
-  if (params.useLastMinutes) parts.push(`last ${params.lastMinutes.toFixed(1)}m`);
-  if (params.useOdds) parts.push(`odds ${params.hitOdds >= 0.5 ? "≥" : "≤"} ${params.hitOdds.toFixed(2)}`);
-  if (params.useSpot) parts.push(`|Δ|≥${params.minDistance.toFixed(0)}`);
+  if (params.useLastMinutes) {
+    parts.push(`elapsed ${fmtMinClock(params.elapsedFromMin)}–${fmtMinClock(params.elapsedToMin)}`);
+  }
+  if (params.useOdds) parts.push(`odds ${Number(params.oddsLo).toFixed(2)}–${Number(params.oddsHi).toFixed(2)}`);
+  if (params.useSpot) {
+    const hi = params.maxDistance == null ? "∞" : Number(params.maxDistance).toFixed(0);
+    parts.push(`|Δ| $${Number(params.minDistance).toFixed(0)}–$${hi}`);
+  }
   if (params.useTwap) parts.push("TWAP agrees");
   if (params.useVolume) parts.push(`vol≥${params.minVolume.toFixed(0)}`);
   if (params.useVenues) parts.push(`venues≥${params.minVenues}`);

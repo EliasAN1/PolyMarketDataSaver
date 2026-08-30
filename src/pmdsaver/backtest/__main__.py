@@ -32,10 +32,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--fee", dest="fee_rate", type=float, help=argparse.SUPPRESS)
     parser.add_argument("--entry-after", dest="entry_after_s", type=float, default=15.0)
     parser.add_argument("--min-distance", dest="min_distance", type=float, default=10.0)
+    parser.add_argument(
+        "--max-distance",
+        dest="max_distance",
+        type=float,
+        default=None,
+        help="Upper bound on |BTC−PTB| in dollars. Omit for no cap (at-least min-distance).",
+    )
     parser.add_argument("--max-ask", dest="max_ask", type=float, default=0.75)
     parser.add_argument("--cheap-ask", dest="cheap_ask", type=float, default=0.55)
     parser.add_argument("--hit-odds", dest="hit_odds", type=float, default=0.25)
+    parser.add_argument(
+        "--odds-lo",
+        dest="odds_lo",
+        type=float,
+        default=None,
+        help="Low end of the odds band. Entry fires when odds enter [lo, hi], not if already inside.",
+    )
+    parser.add_argument(
+        "--odds-hi",
+        dest="odds_hi",
+        type=float,
+        default=None,
+        help="High end of the odds band (e.g. --odds-lo 0.10 --odds-hi 0.20).",
+    )
     parser.add_argument("--last-minutes", dest="last_minutes", type=float, default=3.0)
+    parser.add_argument(
+        "--elapsed-from",
+        dest="elapsed_from_min",
+        type=float,
+        default=None,
+        help="Watch window start in minutes from open (e.g. 2.5 = 2:30). Overrides last-minutes.",
+    )
+    parser.add_argument(
+        "--elapsed-to",
+        dest="elapsed_to_min",
+        type=float,
+        default=None,
+        help="Watch window end in minutes from open (e.g. 3 = 3:00).",
+    )
     parser.add_argument("--no-last-minutes", dest="use_last_minutes", action="store_false")
     parser.add_argument("--no-odds", dest="use_odds", action="store_false")
     parser.add_argument("--use-spot", dest="use_spot", action="store_true")
@@ -83,11 +118,16 @@ def main(argv: list[str] | None = None) -> int:
             fee_rate=args.fee_rate,
             entry_after_s=args.entry_after_s,
             min_distance=args.min_distance,
+            max_distance=args.max_distance,
             max_ask=args.max_ask,
             cheap_ask=args.cheap_ask,
             hit_odds=args.hit_odds,
+            odds_lo=args.odds_lo,
+            odds_hi=args.odds_hi,
             last_minutes=args.last_minutes,
             use_last_minutes=args.use_last_minutes,
+            elapsed_from_min=args.elapsed_from_min,
+            elapsed_to_min=args.elapsed_to_min,
             use_odds=args.use_odds,
             use_spot=args.use_spot,
             use_twap=args.use_twap,

@@ -6,9 +6,9 @@
   <title>BTC 5m · strategy lab</title>
   <link rel="stylesheet" href="/static/app.css?v=4" />
   <link rel="stylesheet" href="/static/backtest.css?v=5" />
-  <link rel="stylesheet" href="/static/lab.css?v=3" />
-  <script src="/static/lab_engine.js?v=1"></script>
-  <script src="/static/lab.js?v=2" defer></script>
+  <link rel="stylesheet" href="/static/lab.css?v=5" />
+  <script src="/static/lab_engine.js?v=4"></script>
+  <script src="/static/lab.js?v=5" defer></script>
 </head>
 <body>
   <header class="bt-header">
@@ -78,31 +78,42 @@
         <div class="lab-filter" id="filterLastMinutes">
           <div class="lab-filter-head">
             <label class="switch"><input type="checkbox" id="useLastMinutes" checked /><span class="switch-track"><span class="switch-thumb"></span></span></label>
-            <span class="lab-filter-title">Only in the last</span>
-            <input class="lab-filter-num" id="lastMinutesNum" type="number" min="0.5" max="5" step="0.5" value="3" />
+            <span class="lab-filter-title">Elapsed</span>
+            <input class="lab-filter-num" id="elapsedFromNum" type="number" min="0" max="5" step="0.5" value="2" title="Start, minutes from window open" />
+            <span class="lab-filter-unit">–</span>
+            <input class="lab-filter-num" id="elapsedToNum" type="number" min="0" max="5" step="0.5" value="5" title="End, minutes from window open" />
             <span class="lab-filter-unit">min</span>
           </div>
-          <input class="lab-filter-range" id="lastMinutesRange" type="range" min="0.5" max="5" step="0.5" value="3" />
+          <input class="lab-filter-range" id="elapsedFromRange" type="range" min="0" max="5" step="0.5" value="2" title="From" />
+          <input class="lab-filter-range" id="elapsedToRange" type="range" min="0" max="5" step="0.5" value="5" title="To" />
+          <div class="lab-filter-hint">Minutes from window open. 2.5–3.0 is 2:30 to 3:00. Last 3 minutes of a 5m window is 2.0–5.0.</div>
         </div>
 
         <div class="lab-filter" id="filterOdds">
           <div class="lab-filter-head">
             <label class="switch"><input type="checkbox" id="useOdds" checked /><span class="switch-track"><span class="switch-thumb"></span></span></label>
-            <span class="lab-filter-title">Buy when odds reach</span>
-            <input class="lab-filter-num" id="hitOddsNum" type="number" min="0.05" max="0.95" step="0.01" value="0.25" />
+            <span class="lab-filter-title">Odds enter</span>
+            <input class="lab-filter-num" id="oddsLoNum" type="number" min="0.01" max="0.99" step="0.01" value="0.20" />
+            <span class="lab-filter-unit">–</span>
+            <input class="lab-filter-num" id="oddsHiNum" type="number" min="0.01" max="0.99" step="0.01" value="0.30" />
           </div>
-          <input class="lab-filter-range" id="hitOddsRange" type="range" min="0.05" max="0.95" step="0.01" value="0.25" />
-          <div class="lab-filter-hint">≥ 0.50 buys the favorite, &lt; 0.50 buys the underdog.</div>
+          <input class="lab-filter-range" id="oddsLoRange" type="range" min="0.01" max="0.99" step="0.01" value="0.20" title="Low" />
+          <input class="lab-filter-range" id="oddsHiRange" type="range" min="0.01" max="0.99" step="0.01" value="0.30" title="High" />
+          <div class="lab-filter-hint">Buys the first time a side’s odds <em>enter</em> this band. Already inside or already cheaper/richer at the start of the watch window does not count. Example: 0.10–0.20 underdog, 0.80–0.90 favorite.</div>
         </div>
 
         <div class="lab-filter" id="filterSpot">
           <div class="lab-filter-head">
             <label class="switch"><input type="checkbox" id="useSpot" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
-            <span class="lab-filter-title">BTC at least</span>
-            <input class="lab-filter-num" id="minDistanceNum" type="number" min="0" max="200" step="1" value="10" />
-            <span class="lab-filter-unit">$ from target</span>
+            <span class="lab-filter-title">|BTC−PTB|</span>
+            <input class="lab-filter-num" id="minDistanceNum" type="number" min="0" max="200" step="1" value="5" />
+            <span class="lab-filter-unit">–</span>
+            <input class="lab-filter-num" id="maxDistanceNum" type="number" min="0" max="200" step="1" value="10" />
+            <span class="lab-filter-unit">$</span>
           </div>
-          <input class="lab-filter-range" id="minDistanceRange" type="range" min="0" max="200" step="1" value="10" />
+          <input class="lab-filter-range" id="minDistanceRange" type="range" min="0" max="200" step="1" value="5" title="Min $" />
+          <input class="lab-filter-range" id="maxDistanceRange" type="range" min="0" max="200" step="1" value="10" title="Max $" />
+          <div class="lab-filter-hint">Absolute dollars from the price-to-beat. 5–10 means between $5 and $10 away. 10–200 is “at least $10” on this slider.</div>
         </div>
 
         <div class="lab-filter" id="filterTwap">
@@ -165,6 +176,36 @@
           <div class="value" id="kpiDrawdown">—</div>
           <div class="meta" id="kpiDrawdownMeta">—</div>
         </div>
+        <div class="kpi-card">
+          <div class="label">Trades / day</div>
+          <div class="value" id="kpiTradesDay">—</div>
+          <div class="meta" id="kpiTradesDayMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Avg day PnL</div>
+          <div class="value" id="kpiDayPnl">—</div>
+          <div class="meta" id="kpiDayPnlMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Profit factor</div>
+          <div class="value" id="kpiPf">—</div>
+          <div class="meta" id="kpiPfMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Avg win / loss</div>
+          <div class="value" id="kpiPayoff">—</div>
+          <div class="meta" id="kpiPayoffMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Best / worst day</div>
+          <div class="value" id="kpiBestDay">—</div>
+          <div class="meta" id="kpiBestDayMeta">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">Streaks</div>
+          <div class="value" id="kpiStreak">—</div>
+          <div class="meta" id="kpiStreakMeta">—</div>
+        </div>
       </section>
 
       <section class="lab-panel">
@@ -181,9 +222,12 @@
         <div class="lab-panel-head">
           <h2>Sweep a variable</h2>
           <select id="sweepVar">
-            <option value="hitOdds">Buy-at odds</option>
-            <option value="lastMinutes">Last minutes</option>
+            <option value="oddsLo">Odds band low</option>
+            <option value="oddsHi">Odds band high</option>
+            <option value="elapsedFromMin">Elapsed from</option>
+            <option value="elapsedToMin">Elapsed to</option>
             <option value="minDistance">Min |BTC−PTB|</option>
+            <option value="maxDistance">Max |BTC−PTB|</option>
             <option value="minVolume">Min volume</option>
             <option value="minVenues">Min venues</option>
           </select>

@@ -185,6 +185,10 @@
   width: 100%;
 }
 
+.lab-filter-range + .lab-filter-range {
+  margin-top: 0.2rem;
+}
+
 /* Switch --------------------------------------------------------------- */
 
 .switch {
@@ -291,10 +295,13 @@ input[type="number"]:disabled {
 }
 
 .kpi-card .value {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   margin-top: 0.15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kpi-card .value.up { color: var(--up); }

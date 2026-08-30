@@ -27,11 +27,16 @@ class BacktestConfig:
     fee_rate: float = CRYPTO_TAKER_FEE_RATE
     entry_after_s: float = 15.0
     min_distance: float = 10.0
+    max_distance: float | None = None
     max_ask: float = 0.75
     cheap_ask: float = 0.55
     hit_odds: float = 0.25
+    odds_lo: float | None = None
+    odds_hi: float | None = None
     last_minutes: float = 3.0
     use_last_minutes: bool = True
+    elapsed_from_min: float | None = None
+    elapsed_to_min: float | None = None
     use_odds: bool = True
     use_spot: bool = False
     use_twap: bool = False
@@ -108,25 +113,49 @@ def _snapshot_at(snap: Snapshot, tape: WindowTape, ts_ms: int) -> Snapshot:
     )
 
 
-def _iter_with_last_minutes(conn: sqlite3.Connection, tape: WindowTape, last_minutes: float):
-    boundary_ms = int((tape.window_end - last_minutes * 60) * 1000)
+def _watch_span(config: BacktestConfig, tape: WindowTape) -> tuple[bool, float, float]:
+    duration = float(tape.window_end - tape.window_start)
+    if config.elapsed_from_min is not None or config.elapsed_to_min is not None:
+        lo_m = 0.0 if config.elapsed_from_min is None else float(config.elapsed_from_min)
+        hi_m = duration / 60.0 if config.elapsed_to_min is None else float(config.elapsed_to_min)
+        lo_s, hi_s = lo_m * 60.0, hi_m * 60.0
+        if lo_s > hi_s:
+            lo_s, hi_s = hi_s, lo_s
+        return True, max(0.0, lo_s), min(duration, hi_s)
+    if _uses_last_minutes(config):
+        return True, max(0.0, duration - float(config.last_minutes) * 60.0), duration
+    return False, 0.0, duration
+
+
+def _iter_watch(conn: sqlite3.Connection, tape: WindowTape, from_s: float, to_s: float):
+    from_ms = int((tape.window_start + from_s) * 1000)
+    to_ms = int((tape.window_start + to_s) * 1000)
     last: Snapshot | None = None
-    emitted_boundary = False
+    emitted_from = from_s <= 0
     for snap in iter_snapshots(conn, tape):
+        if snap.ts_ms > to_ms:
+            if last is not None and last.ts_ms < to_ms:
+                yield _snapshot_at(last, tape, to_ms)
+            return
         if (
-            not emitted_boundary
+            not emitted_from
             and last is not None
-            and last.ts_ms < boundary_ms <= snap.ts_ms
+            and last.ts_ms < from_ms <= snap.ts_ms
         ):
-            emitted_boundary = True
-            yield _snapshot_at(last, tape, boundary_ms)
-        if snap.ts_ms >= boundary_ms:
-            emitted_boundary = True
+            emitted_from = True
+            yield _snapshot_at(last, tape, from_ms)
         last = snap
-        yield snap
+        if snap.ts_ms >= from_ms:
+            emitted_from = True
+            yield snap
     end_ms = tape.window_end * 1000
-    if not emitted_boundary and last is not None and last.ts_ms < boundary_ms <= end_ms:
-        yield _snapshot_at(last, tape, boundary_ms)
+    if last is None:
+        return
+    if not emitted_from and last.ts_ms < from_ms <= end_ms:
+        yield _snapshot_at(last, tape, min(from_ms, to_ms))
+        emitted_from = True
+    if last.ts_ms < to_ms <= end_ms:
+        yield _snapshot_at(last, tape, to_ms)
 
 
 def run_window(
@@ -162,11 +191,8 @@ def run_window(
     fill: float | None = None
     entry_ts: int | None = None
     fill_snap: Snapshot | None = None
-    ticks = (
-        _iter_with_last_minutes(conn, tape, config.last_minutes)
-        if _uses_last_minutes(config)
-        else iter_snapshots(conn, tape)
-    )
+    use_watch, from_s, to_s = _watch_span(config, tape)
+    ticks = _iter_watch(conn, tape, from_s, to_s) if use_watch else iter_snapshots(conn, tape)
 
     for snap in ticks:
         signal = strategy.on_tick(snap)
@@ -258,11 +284,16 @@ def _strategy_from_config(config: BacktestConfig) -> Strategy:
         config.strategy,
         entry_after_s=config.entry_after_s,
         min_distance=config.min_distance,
+        max_distance=config.max_distance,
         max_ask=config.max_ask,
         cheap_ask=config.cheap_ask,
         hit_odds=config.hit_odds,
+        odds_lo=config.odds_lo,
+        odds_hi=config.odds_hi,
         last_minutes=config.last_minutes,
         use_last_minutes=config.use_last_minutes,
+        elapsed_from_min=config.elapsed_from_min,
+        elapsed_to_min=config.elapsed_to_min,
         use_odds=config.use_odds,
         use_spot=config.use_spot,
         use_twap=config.use_twap,

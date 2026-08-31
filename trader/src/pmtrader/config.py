@@ -22,6 +22,7 @@ class TraderConfig:
     use_entry_last: bool = True
     odds_min: float = 0.20
     odds_max: float = 0.30
+    fak_limit: float | None = None
     use_btc_distance: bool = False
     min_btc_away: float = 5.0
     max_btc_away: float | None = None
@@ -35,6 +36,11 @@ class TraderConfig:
     def __post_init__(self) -> None:
         if not 0 < self.odds_min <= self.odds_max < 1:
             raise ValueError("odds_min / odds_max must satisfy 0 < min <= max < 1")
+        cap = self.effective_fak_limit()
+        if not 0 < cap < 1:
+            raise ValueError("fak_limit must satisfy 0 < limit < 1")
+        if cap < self.odds_max:
+            raise ValueError("fak_limit must be >= odds_max")
         if self.stake_usd <= 0:
             raise ValueError("stake_usd must be positive")
         if self.min_venues < 1:
@@ -68,6 +74,25 @@ class TraderConfig:
         if self.use_entry_last:
             return True, max(0.0, duration_s - float(self.entry_last_minutes) * 60.0), duration_s
         return False, 0.0, duration_s
+
+    def effective_fak_limit(self) -> float:
+        """Max FAK limit price; defaults to odds_max when fak_limit is omitted."""
+        return self.odds_max if self.fak_limit is None else self.fak_limit
+
+    def trigger_band_label(self) -> str:
+        lo, hi = self.odds_min, self.odds_max
+        if lo == hi:
+            return f"{lo:.2f}"
+        return f"{lo:.2f}-{hi:.2f}"
+
+    def fillable_ask_label(self) -> str:
+        lo, hi = self.odds_min, self.odds_max
+        cap = self.effective_fak_limit()
+        if lo < hi:
+            return f"{lo:.2f}-{cap:.2f}"
+        if lo < 0.5:
+            return f"<= {cap:.2f}"
+        return f"{lo:.2f}-{cap:.2f}"
 
 
 def load_config(path: Path) -> TraderConfig:

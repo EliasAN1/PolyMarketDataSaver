@@ -26,17 +26,21 @@ export function slugUrl(slug) {
 }
 
 export function slugLabel(slug) {
-  const m = (slug ?? "").match(/-(\d{10,})$/);
+  if (!slug) return "Market";
+  const m = slug.match(/-(\d{10,})$/);
+  const isBtc5m = slug.startsWith("btc-updown-5m");
+  const prefix = isBtc5m ? "BTC 5m · " : "";
   if (m) {
     const d = new Date(Number(m[1]) * 1000);
-    return d.toLocaleString(undefined, {
+    const dateStr = d.toLocaleString(undefined, {
       month: "short",
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
     });
+    return `${prefix}${dateStr}`;
   }
-  return "Market";
+  return slug;
 }
 
 export function fmtSide(t) {

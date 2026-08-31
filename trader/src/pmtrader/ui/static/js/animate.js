@@ -24,13 +24,17 @@ export function cancelUsdTween(el) {
  * Count an element's USD text from `from` to `to`.
  * Mid-flight calls retarget from the live interpolated value.
  */
-export function tweenUsd(el, to, { from = null, animate = false, duration = 1050, onFrame } = {}) {
+export function tweenUsd(
+  el,
+  to,
+  { from = null, animate = false, duration = 1050, onFrame, format = fmtUsd } = {},
+) {
   if (!el) return;
   const startVal = currentUsd(el) ?? from;
   cancelUsdTween(el);
 
   const snap = () => {
-    paintUsd(el, to, onFrame);
+    paintUsd(el, to, onFrame, format);
   };
 
   if (
@@ -53,19 +57,19 @@ export function tweenUsd(el, to, { from = null, animate = false, duration = 1050
     const t = Math.min(1, (now - started) / duration);
     const v = startVal + (to - startVal) * easeOutCubic(t);
     job.value = v;
-    paintUsd(el, v, onFrame);
+    paintUsd(el, v, onFrame, format);
     if (t < 1) {
       job.raf = requestAnimationFrame(tick);
     } else {
-      paintUsd(el, to, onFrame);
+      paintUsd(el, to, onFrame, format);
       running.delete(el);
     }
   };
   job.raf = requestAnimationFrame(tick);
 }
 
-function paintUsd(el, n, onFrame) {
-  el.textContent = fmtUsd(n);
+function paintUsd(el, n, onFrame, format = fmtUsd) {
+  el.textContent = format(n);
   onFrame?.(n);
 }
 

@@ -1,12 +1,11 @@
 import { buildTrades, tradePnl, effectiveWon, isStatClosed } from "./parse.js";
-import { computeSummary, fmtPct, greeting, formatRecordLine } from "./stats.js";
+import { computeSummary, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js";
 import { loadFromServer, loadBalanceFromServer } from "./load.js";
 import { renderTradesTable, bindTradesTableSort } from "./trades-table.js";
 import { computeRecap, renderRecapHtml, startRecapCountdown } from "./recap.js";
 import { startAutoRefresh } from "./refresh.js";
 import { currentUsd, tweenUsd, flashDelta, pulseEl } from "./animate.js";
 import { initProfile } from "./profile.js";
-import { initAccordions } from "./accordion.js";
 import { startLivePoll } from "./live.js";
 
 const state = {
@@ -16,17 +15,22 @@ const state = {
 };
 
 const els = {
-  shell: document.querySelector(".shell"),
+  shell: document.getElementById("app-shell"),
   greeting: document.getElementById("hero-greeting"),
   heroNet: document.getElementById("hero-net"),
   heroDelta: document.getElementById("hero-delta"),
   heroSub: document.getElementById("hero-sub"),
+  heroSubNet: document.getElementById("hero-sub-net"),
   heroBadge: document.getElementById("hero-badge"),
   statBalance: document.getElementById("stat-balance"),
   statWinRate: document.getElementById("stat-win-rate"),
+  statWinCount: document.getElementById("stat-win-count"),
+  statStreak: document.getElementById("stat-streak"),
+  statStreakSub: document.getElementById("stat-streak-sub"),
+  navBalanceVal: document.getElementById("nav-balance-val"),
   refreshBtn: document.getElementById("refresh-btn"),
   emptyState: document.getElementById("empty-state"),
-  hero: document.getElementById("hero"),
+  hero: document.getElementById("performance-section"),
   tradesSection: document.getElementById("trades-section"),
   recapSection: document.getElementById("recap-section"),
   recapInner: document.getElementById("recap-inner"),
@@ -51,13 +55,14 @@ function toneUsd(el, n) {
   el.classList.toggle("down", n < -0.001);
 }
 
-function applyUsd(el, key, next, { animate = false, pulse = false, tone = true } = {}) {
+function applyUsd(el, key, next, { animate = false, pulse = false, tone = true, format = fmtUsd } = {}) {
   const from = currentUsd(el) ?? displayed[key];
   displayed[key] = next;
   const doTween = animate && from != null && Math.abs(next - from) >= 0.005;
   tweenUsd(el, next, {
     from,
     animate: doTween,
+    format,
     onFrame: tone ? (n) => toneUsd(el, n) : undefined,
   });
   if (doTween && pulse) pulseEl(el);
@@ -102,41 +107,7 @@ function render({ animatePnl = false } = {}) {
   const list = trades();
   const s = computeSummary(list);
 
-  if (!list.length) {
-    els.hero?.classList.add("is-empty");
-    els.hero?.classList.remove("is-profit", "is-loss");
-    els.emptyState.hidden = false;
-    els.recapSection.hidden = true;
-    els.tradesSection.hidden = true;
-    els.heroNet.textContent = "—";
-    els.heroSub.textContent = "";
-    els.heroBadge.textContent = "";
-    if (els.statBalance) els.statBalance.textContent = "—";
-    if (els.statWinRate) els.statWinRate.textContent = "—";
-    displayed.net = displayed.balance = displayed.last5 = null;
-    return;
-  }
-
-  els.hero?.classList.remove("is-empty");
-  els.emptyState.hidden = true;
-
-  const { fresh } = collectNewClosed(list);
-  const shouldAnimate = animatePnl && displayed.net != null && fresh.length > 0;
-
-  const positive = s.netPnl >= 0;
-  els.hero?.classList.toggle("is-profit", positive);
-  els.hero?.classList.toggle("is-loss", !positive && s.netPnl < -0.001);
-  els.greeting.textContent = greeting();
-  const netDelta = applyUsd(els.heroNet, "net", s.netPnl, {
-    animate: shouldAnimate,
-    pulse: shouldAnimate,
-  });
-  if (shouldAnimate) showHeroDelta(netDelta);
-  els.heroSub.textContent = formatRecordLine(s);
-  els.heroBadge.textContent = positive ? "In profit" : s.netPnl < -0.001 ? "Drawdown" : "Breakeven";
-  els.heroBadge.className = `hero-badge ${positive ? "up" : "down"}`;
-
-  els.statWinRate.textContent = fmtPct(s.winRate);
+  // Update Collateral Balances (No + prefix for pure balance)
   let balanceVal = null;
   if (state.balance?.balance_pusd != null) {
     balanceVal = Number(state.balance.balance_pusd);
@@ -144,32 +115,104 @@ function render({ animatePnl = false } = {}) {
     const lastBal = [...list].reverse().find((t) => t.balancePusd != null);
     if (lastBal?.balancePusd != null) balanceVal = lastBal.balancePusd;
   }
+
   if (balanceVal != null) {
-    applyUsd(els.statBalance, "balance", balanceVal, {
-      animate: shouldAnimate,
-      pulse: shouldAnimate,
-      tone: false,
-    });
+    const formattedBal = fmtCash(balanceVal);
+    if (els.navBalanceVal) els.navBalanceVal.textContent = formattedBal;
+    if (els.statBalance) {
+      applyUsd(els.statBalance, "balance", balanceVal, {
+        animate: animatePnl && displayed.balance != null,
+        pulse: animatePnl,
+        tone: false,
+        format: fmtCash,
+      });
+    }
   } else {
-    els.statBalance.textContent = "—";
+    if (els.navBalanceVal) els.navBalanceVal.textContent = "—";
+    if (els.statBalance) els.statBalance.textContent = "—";
     displayed.balance = null;
   }
 
-  const recap = computeRecap(list);
-  els.recapSection.hidden = !recap.recent.length;
-  if (recap.recent.length) {
-    els.recapInner.innerHTML = renderRecapHtml(recap);
-    const last5El = els.recapInner.querySelector(".recap-value");
-    if (last5El) {
-      applyUsd(last5El, "last5", recap.last5Net, { animate: shouldAnimate });
-    } else {
-      displayed.last5 = recap.last5Net;
+  // If no trades
+  if (!list.length) {
+    els.hero?.classList.add("is-empty");
+    els.hero?.classList.remove("is-profit", "is-loss");
+    if (els.emptyState) els.emptyState.hidden = false;
+    if (els.recapSection) els.recapSection.hidden = true;
+    if (els.tradesSection) els.tradesSection.hidden = true;
+    if (els.heroNet) {
+      els.heroNet.textContent = "$0.00";
+      els.heroNet.className = "hero-net mono";
     }
+    if (els.heroSub) els.heroSub.textContent = "0W · 0L · 0 resolved";
+    if (els.heroSubNet) els.heroSubNet.textContent = "Session Profit";
+    if (els.heroBadge) {
+      els.heroBadge.textContent = "Standby";
+      els.heroBadge.className = "hero-badge";
+    }
+    if (els.statWinRate) els.statWinRate.textContent = "—";
+    if (els.statWinCount) els.statWinCount.textContent = "0 wins";
+    if (els.statStreak) els.statStreak.textContent = "—";
+    if (els.statStreakSub) els.statStreakSub.textContent = "Session";
+    displayed.net = displayed.last5 = null;
+    return;
+  }
+
+  if (els.emptyState) els.emptyState.hidden = true;
+
+  const { fresh } = collectNewClosed(list);
+  const shouldAnimate = animatePnl && displayed.net != null && fresh.length > 0;
+
+  const positive = s.netPnl >= 0;
+  els.hero?.classList.toggle("is-profit", positive);
+  els.hero?.classList.toggle("is-loss", !positive && s.netPnl < -0.001);
+  if (els.greeting) els.greeting.textContent = `${greeting()} · Session P&L`;
+
+  const netDelta = applyUsd(els.heroNet, "net", s.netPnl, {
+    animate: shouldAnimate,
+    pulse: shouldAnimate,
+    format: fmtUsd,
+  });
+  if (shouldAnimate) showHeroDelta(netDelta);
+
+  if (els.heroSub) els.heroSub.textContent = formatRecordLine(s);
+  if (els.heroSubNet) els.heroSubNet.textContent = positive ? "Session in profit" : "Session in drawdown";
+  if (els.heroBadge) {
+    els.heroBadge.textContent = positive ? "In Profit" : s.netPnl < -0.001 ? "Drawdown" : "Breakeven";
+    els.heroBadge.className = `hero-badge ${positive ? "up" : "down"}`;
+  }
+
+  if (els.statWinRate) els.statWinRate.textContent = fmtPct(s.winRate);
+  if (els.statWinCount) els.statWinCount.textContent = `${s.wins}W / ${s.losses}L (${s.resolved} total)`;
+
+  if (els.statStreak) {
+    if (s.currentWinStreak > 0) {
+      els.statStreak.textContent = `${s.currentWinStreak}W`;
+      els.statStreak.className = "tile-val mono up";
+    } else if (s.currentLossStreak > 0) {
+      els.statStreak.textContent = `${s.currentLossStreak}L`;
+      els.statStreak.className = "tile-val mono down";
+    } else {
+      els.statStreak.textContent = "—";
+      els.statStreak.className = "tile-val mono";
+    }
+  }
+
+  if (els.statStreakSub) {
+    els.statStreakSub.textContent = `Max: ${s.maxWinStreak}W / ${s.maxLossStreak}L`;
+  }
+
+  // Recap Section
+  const recap = computeRecap(list);
+  if (els.recapSection) els.recapSection.hidden = !recap.recent.length;
+  if (recap.recent.length && els.recapInner) {
+    els.recapInner.innerHTML = renderRecapHtml(recap);
   } else {
     displayed.last5 = null;
   }
 
-  els.tradesSection.hidden = false;
+  // Trades Section
+  if (els.tradesSection) els.tradesSection.hidden = false;
   renderTradesTable(list, document);
   if (shouldAnimate) flashResolvedRows(document, fresh);
 }
@@ -185,8 +228,11 @@ async function refresh({ silent = false } = {}) {
   } catch {
     if (!state.records.length) {
       els.hero?.classList.add("is-empty");
-      els.emptyState.hidden = false;
-      els.emptyState.textContent = "Could not load trades.";
+      if (els.emptyState) {
+        els.emptyState.hidden = false;
+        const p = els.emptyState.querySelector("p");
+        if (p) p.textContent = "Could not load trades log from server.";
+      }
     }
   } finally {
     setLoading(false);
@@ -195,7 +241,6 @@ async function refresh({ silent = false } = {}) {
 
 els.refreshBtn?.addEventListener("click", () => refresh());
 bindTradesTableSort(document, render);
-initAccordions();
 initProfile();
 refresh();
 startAutoRefresh(refresh);

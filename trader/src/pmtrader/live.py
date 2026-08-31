@@ -7,7 +7,7 @@ from typing import Any
 
 from pmtrader.config import TraderConfig
 from pmtrader.snapshot import LiveSnapshot
-from pmtrader.strategy import evaluate
+from pmtrader.strategy import _ask_fillable, evaluate
 
 
 def live_payload(trader: Any | None) -> dict[str, Any]:
@@ -53,6 +53,9 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "config": {
             "odds_min": cfg.odds_min,
             "odds_max": cfg.odds_max,
+            "fak_limit": cfg.effective_fak_limit(),
+            "trigger_band": cfg.trigger_band_label(),
+            "fillable_ask": cfg.fillable_ask_label(),
             "elapsed_from_min": cfg.elapsed_from_min,
             "elapsed_to_min": cfg.elapsed_to_min,
             "entry_last_minutes": cfg.entry_last_minutes,
@@ -112,11 +115,7 @@ def _checks(
     )
     ask = snap.ask_for(side) if side else None
     mid = snap.mid_for(side) if side else None
-    in_ask_band = ask is not None and (
-        (cfg.odds_min < cfg.odds_max and cfg.odds_min <= ask <= cfg.odds_max)
-        or (cfg.odds_min == cfg.odds_max and cfg.odds_min < 0.5 and ask <= cfg.odds_min)
-        or (cfg.odds_min == cfg.odds_max and cfg.odds_min >= 0.5 and cfg.odds_min <= ask <= cfg.odds_max)
-    )
+    in_ask_band = ask is not None and _ask_fillable(ask, cfg)
     crossed = bool(side and snap.mid_entered(side))
     twap_delta = snap.twap_minus_ptb()
     twap_ok = (
@@ -131,69 +130,91 @@ def _checks(
     venues_ok = (not cfg.use_venues) or venues >= cfg.min_venues
     from_clock = _clock(from_s)
     to_clock = _clock(to_s)
-    btc_label = f"|BTC−PTB| ${cfg.min_btc_away:g}"
-    if cfg.max_btc_away is not None:
-        btc_label += f"–${cfg.max_btc_away:g}"
+
+    # Concise target string
+    if cfg.min_btc_away == 0 and cfg.max_btc_away is not None:
+        btc_target = f"<= ${cfg.max_btc_away:g}"
+    elif cfg.min_btc_away > 0 and cfg.max_btc_away is not None:
+        btc_target = f"${cfg.min_btc_away:g}-${cfg.max_btc_away:g}"
+    elif cfg.min_btc_away > 0 and cfg.max_btc_away is None:
+        btc_target = f">= ${cfg.min_btc_away:g}"
     else:
-        btc_label += "+"
+        btc_target = "Active"
+
+    # Clean, concise odds values
+    if side and ask is not None:
+        odds_val = f"{side.upper()} {ask:.2f}"
+    else:
+        odds_val = _odds_pair(snap.up_ask, snap.down_ask, side)
+
+    if side and mid is not None:
+        cross_val = f"{side.upper()} {mid:.2f}"
+    else:
+        cross_val = "Waiting" if not crossed else "Triggered"
 
     return [
         {
             "id": "time",
-            "label": f"Elapsed {from_clock}–{to_clock}",
+            "name": "Elapsed Window",
+            "target": f"{from_clock}-{to_clock}",
             "ok": in_window and in_elapsed and not_late,
-            "value": f"{int(left)}s left" if left is not None else "no window",
+            "value": f"{int(left)}s left" if left is not None else "No window",
             "enabled": True,
         },
         {
             "id": "ptb",
-            "label": "Price to beat",
+            "name": "Price To Beat",
+            "target": "PTB Baseline",
             "ok": has_ptb,
-            "value": _num(snap.ptb, 2),
+            "value": f"${_num(snap.ptb, 2)}" if snap.ptb is not None else "-",
             "enabled": True,
         },
         {
             "id": "btc",
-            "label": btc_label,
+            "name": "BTC Distance",
+            "target": btc_target,
             "ok": btc_ok,
             "value": _signed(btc_delta, 1),
             "enabled": cfg.use_btc_distance,
         },
         {
             "id": "odds",
-            "label": f"Ask fillable {cfg.odds_min:.2f}–{cfg.odds_max:.2f}",
+            "name": "Fillable Ask",
+            "target": cfg.fillable_ask_label(),
             "ok": in_ask_band,
-            "value": _odds_pair(snap.up_ask, snap.down_ask, side, prefix="ask"),
+            "value": odds_val,
             "enabled": True,
         },
         {
             "id": "cross",
-            "label": f"Mid entered {cfg.odds_min:.2f}–{cfg.odds_max:.2f}",
+            "name": "Mid Cross Trigger",
+            "target": cfg.trigger_band_label(),
             "ok": crossed,
-            "value": _odds_pair(snap.up_mid, snap.down_mid, side, prefix="mid")
-            if mid is not None or snap.up_mid is not None
-            else ("yes" if crossed else "waiting"),
+            "value": cross_val,
             "enabled": True,
         },
         {
             "id": "twap",
-            "label": "TWAP agrees",
+            "name": "TWAP Agrees",
+            "target": "Directional",
             "ok": twap_ok,
             "value": _signed(twap_delta, 1),
             "enabled": cfg.use_twap,
         },
         {
             "id": "venues",
-            "label": f"Venues ≥ {cfg.min_venues}",
+            "name": "Venues Consensus",
+            "target": f">= {cfg.min_venues} venues",
             "ok": venues_ok,
-            "value": f"{venues}" if side else "—",
+            "value": f"{venues} agreed" if side else "Waiting",
             "enabled": cfg.use_venues,
         },
         {
             "id": "once",
-            "label": "This window",
+            "name": "Window Order Lock",
+            "target": "1 per 5m",
             "ok": not traded,
-            "value": "already sent" if traded else "open",
+            "value": "Sent" if traded else "Ready",
             "enabled": True,
         },
     ]
@@ -206,27 +227,27 @@ def _clock(seconds: float) -> str:
 
 def _num(value: float | None, digits: int) -> str:
     if value is None:
-        return "—"
+        return "-"
     return f"{value:,.{digits}f}"
 
 
 def _signed(value: float | None, digits: int) -> str:
     if value is None:
-        return "—"
-    return f"{value:+,.{digits}f}"
+        return "-"
+    sign = "+" if value >= 0 else "-"
+    return f"{sign}${abs(value):,.{digits}f}"
 
 
 def _odds_pair(
     up: float | None,
     down: float | None,
     side: str | None,
-    *,
-    prefix: str = "",
 ) -> str:
     def fmt(v: float | None) -> str:
-        return f"{v:.2f}" if v is not None else "—"
+        return f"{v:.2f}" if v is not None else "-"
 
-    mark_up = "UP" if side == "up" else "up"
-    mark_down = "DOWN" if side == "down" else "down"
-    body = f"{mark_up} {fmt(up)} · {mark_down} {fmt(down)}"
-    return f"{prefix} {body}".strip() if prefix else body
+    if side == "up":
+        return f"UP {fmt(up)}"
+    if side == "down":
+        return f"DN {fmt(down)}"
+    return f"{fmt(up)} / {fmt(down)}"

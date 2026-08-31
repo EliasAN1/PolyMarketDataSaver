@@ -75,7 +75,7 @@ function table(headers, rows) {
   const body = rows
     .map((cells) => `<tr>${cells.map((c) => `<td class="${c.cls || ""}">${c.html ?? esc(c.text ?? "—")}</td>`).join("")}</tr>`)
     .join("");
-  return `<div class="table-scroll"><table class="profile-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `<div class="table-container"><table class="profile-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function cell(text, cls = "") {
@@ -103,40 +103,40 @@ function renderProfile(data) {
 
   return `
     ${errors}
-    <div class="profile-metrics">
-      <article class="profile-metric">
-        <span class="metric-label">Cash</span>
-        <strong class="metric-value">${esc(usd(cash, 2))}</strong>
-      </article>
-      <article class="profile-metric">
-        <span class="metric-label">Portfolio</span>
-        <strong class="metric-value">${esc(usd(portVal, 2))}</strong>
-      </article>
-      <article class="profile-metric">
-        <span class="metric-label">Open positions</span>
-        <strong class="metric-value">${active.length}</strong>
-      </article>
-      <article class="profile-metric">
-        <span class="metric-label">Unredeemed</span>
-        <strong class="metric-value">${leftover.length}</strong>
-      </article>
+    <div class="profile-metrics-row">
+      <div class="profile-metric-box">
+        <span class="metric-label">pUSD Collateral</span>
+        <strong class="metric-val mono">${esc(usd(cash, 2))}</strong>
+      </div>
+      <div class="profile-metric-box">
+        <span class="metric-label">Portfolio Value</span>
+        <strong class="metric-val mono">${esc(usd(portVal, 2))}</strong>
+      </div>
+      <div class="profile-metric-box">
+        <span class="metric-label">Active Positions</span>
+        <strong class="metric-val mono">${active.length}</strong>
+      </div>
+      <div class="profile-metric-box">
+        <span class="metric-label">Settled / Leftover</span>
+        <strong class="metric-val mono">${leftover.length}</strong>
+      </div>
     </div>
 
     <section class="profile-card">
-      <h3>Account</h3>
+      <h3>Account & Authorization</h3>
       <dl class="profile-kv">
         <dt>Funder</dt><dd title="${esc(data.wallet)}">${esc(shortAddr(data.wallet))}</dd>
         <dt>Signer</dt><dd title="${esc(data.signer)}">${esc(shortAddr(data.signer))}</dd>
         <dt>Type</dt><dd>${esc(data.signature_type === "3" || data.signature_type === 3 ? "Deposit wallet" : `Sig ${data.signature_type ?? "—"}`)}</dd>
-        <dt>CLOB</dt><dd>${data.dry_run ? "Read-only" : "Live"}</dd>
+        <dt>CLOB Mode</dt><dd>${data.dry_run ? "Dry Run / Simulation" : "Live CLOB Trading"}</dd>
         <dt>Allowance</dt><dd>${esc(allowanceLabel(bal.allowances))}</dd>
         <dt>Closed-only</dt><dd>${closedOnly ? "Yes" : "No"}</dd>
-        <dt>Server</dt><dd>${esc(when(clob.server_time))}</dd>
+        <dt>CLOB Time</dt><dd>${esc(when(clob.server_time))}</dd>
       </dl>
     </section>
 
     <section class="profile-card">
-      <h3>Open orders</h3>
+      <h3>Open Orders (CLOB)</h3>
       ${table(
         ["Side", "Price", "Size", "Status", "Market"],
         orders.slice(0, 20).map((o) => [
@@ -150,7 +150,7 @@ function renderProfile(data) {
     </section>
 
     <section class="profile-card">
-      <h3>Open positions</h3>
+      <h3>Active Positions</h3>
       ${table(
         ["Market", "Side", "Shares", "Avg", "Now", "PnL"],
         active.slice(0, 30).map((p) => {
@@ -168,7 +168,7 @@ function renderProfile(data) {
     </section>
 
     <section class="profile-card">
-      <h3>Unredeemed leftovers</h3>
+      <h3>Unredeemed Leftovers</h3>
       ${leftover.length ? `<p class="profile-hint">Settled tokens still on the wallet (current price $0). Redeem on Polymarket if they pay out.</p>` : ""}
       ${table(
         ["Market", "Side", "Shares", "Cost"],
@@ -182,7 +182,7 @@ function renderProfile(data) {
     </section>
 
     <section class="profile-card">
-      <h3>Recent fills</h3>
+      <h3>Recent Fills</h3>
       ${table(
         ["Side", "Price", "Shares", "Market"],
         trades.slice(0, 25).map((t) => [
@@ -195,7 +195,7 @@ function renderProfile(data) {
     </section>
 
     <section class="profile-card">
-      <h3>Activity</h3>
+      <h3>Wallet Activity</h3>
       ${table(
         ["Type", "Side", "Shares", "USDC", "Market"],
         activity.slice(0, 25).map((a) => [
@@ -237,13 +237,13 @@ export function initProfile() {
   if (!overlay || !openBtn) return;
 
   async function load() {
-    status.textContent = "Loading…";
+    status.textContent = "Loading account details…";
     try {
       const res = await fetch("/api/profile", { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       body.innerHTML = renderProfile(data);
-      status.textContent = data.wallet ? shortAddr(data.wallet) : "No wallet in .env";
+      status.textContent = data.wallet ? `Connected: ${shortAddr(data.wallet)}` : "No wallet configured";
     } catch (err) {
       status.textContent = "Could not load profile.";
       body.innerHTML = `<p class="profile-error">${esc(err)}</p>`;

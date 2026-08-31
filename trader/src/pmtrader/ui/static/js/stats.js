@@ -72,9 +72,18 @@ function localDateKeyNow() {
   return `${y}-${m}-${day}`;
 }
 
+/** P&L formatting with + or - sign */
 export function fmtUsd(n) {
   if (n == null || Number.isNaN(n)) return "—";
-  return `${n >= 0 ? "+" : ""}$${Math.abs(n).toFixed(2)}`;
+  const sign = n >= 0 ? "+" : "−";
+  return `${sign}$${Math.abs(n).toFixed(2)}`;
+}
+
+/** Pure cash balance formatting (no + prefix) */
+export function fmtCash(n) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const sign = n < 0 ? "−" : "";
+  return `${sign}$${Math.abs(n).toFixed(2)}`;
 }
 
 export function fmtPct(n) {
@@ -89,7 +98,7 @@ export function greeting() {
   return "Good evening";
 }
 
-/** Single compact session line — use in one place only. */
+/** Single compact session line */
 export function formatRecordLine(s) {
   const open = s.open ? ` · ${s.open} open` : "";
   return `${s.wins}W · ${s.losses}L · ${s.resolved} resolved${open}`;

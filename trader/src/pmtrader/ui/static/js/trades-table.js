@@ -1,14 +1,14 @@
 import { fmtUsd } from "./stats.js";
 import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, fmtSide } from "./format.js";
-import { tradePnl } from "./parse.js";
+import { tradePnl, effectiveWon, isStatClosed } from "./parse.js";
 
 const COLUMNS = [
   { key: "entryTs", label: "Time", fmt: (t) => fmtTs(t.entryTs) },
   { key: "slug", label: "Market", link: true },
-  { key: "side", label: "Side", fmt: (t) => fmtSide(t) },
+  { key: "side", label: "Side", customSide: true },
   { key: "fillPrice", label: "Fill", fmt: (t) => fmtOdds(t.fillPrice), mono: true },
-  { key: "outcome", label: "Result", fmt: (t) => outcomeLabel(t) },
-  { key: "netPnl", label: "Net", mono: true },
+  { key: "outcome", label: "Result", customOutcome: true },
+  { key: "netPnl", label: "Net P&L", customPnl: true, mono: true },
 ];
 
 let sortKey = "entryTs";
@@ -19,7 +19,7 @@ function sortValue(t, key) {
   if (key === "entryTs") return t.entryTs ?? 0;
   if (key === "fillPrice") return t.fillPrice ?? -1;
   if (key === "slug") return t.slug ?? "";
-  if (key === "side") return t.side ?? "";
+  if (key === "side") return (t.side ?? "").toLowerCase();
   if (key === "outcome") return outcomeLabel(t);
   return t[key] ?? "";
 }
@@ -31,12 +31,14 @@ function compare(a, b, key) {
   return String(va).localeCompare(String(vb));
 }
 
-export function renderTradesTable(trades, root) {
+export function renderTradesTable(trades, root = document) {
   const tbody = root.getElementById("trades-tbody");
   const thead = root.getElementById("trades-thead");
   const countEl = root.getElementById("trades-count");
+  const mobileList = root.getElementById("mobile-trades-list");
   if (!tbody || !thead) return;
 
+  // Render Table Headers
   thead.innerHTML = `<tr>${COLUMNS.map((c) => {
     const sorted = c.key === sortKey;
     const arrow = sorted ? (sortDir > 0 ? " ▲" : " ▼") : "";
@@ -46,6 +48,7 @@ export function renderTradesTable(trades, root) {
   const sorted = [...trades].sort((a, b) => sortDir * compare(a, b, sortKey));
   const frag = document.createDocumentFragment();
 
+  // 1. Table Rows (Desktop)
   for (const t of sorted) {
     const tr = document.createElement("tr");
     tr.className = "trade-row";
@@ -55,16 +58,26 @@ export function renderTradesTable(trades, root) {
     for (const col of COLUMNS) {
       const td = document.createElement("td");
       if (col.mono) td.classList.add("mono");
+
       if (col.link) {
         const a = document.createElement("a");
         a.href = slugUrl(t.slug);
         a.target = "_blank";
-        a.rel = "noopener";
+        a.rel = "noopener noreferrer";
         a.textContent = slugLabel(t.slug);
         td.appendChild(a);
-      } else if (col.key === "netPnl") {
+      } else if (col.customSide) {
+        const sideLower = (t.side || "up").toLowerCase();
+        td.innerHTML = `<span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span>`;
+      } else if (col.customOutcome) {
+        const closed = isStatClosed(t);
+        const won = effectiveWon(t);
+        const label = !closed ? "OPEN" : won ? "WON" : "LOST";
+        const cls = !closed ? "open" : won ? "won" : "lost";
+        td.innerHTML = `<span class="badge-outcome ${cls}">${label}</span>`;
+      } else if (col.customPnl) {
         if (!t.resolved) {
-          td.textContent = "open";
+          td.innerHTML = `<span class="badge-outcome open">OPEN</span>`;
         } else {
           const pnl = tradePnl(t);
           td.textContent = pnlAtStake(t);
@@ -73,7 +86,6 @@ export function renderTradesTable(trades, root) {
       } else {
         td.textContent = col.fmt ? col.fmt(t) : String(t[col.key] ?? "—");
       }
-      if (col.key === "outcome") td.classList.add(outcomeLabel(t));
       tr.appendChild(td);
     }
 
@@ -81,10 +93,55 @@ export function renderTradesTable(trades, root) {
   }
 
   tbody.replaceChildren(frag);
-  if (countEl) countEl.textContent = `${trades.length} trades`;
+  if (countEl) countEl.textContent = `${trades.length} ${trades.length === 1 ? "trade" : "trades"}`;
+
+  // 2. Mobile Cards View (Narrow Screens)
+  if (mobileList) {
+    if (!trades.length) {
+      mobileList.innerHTML = "";
+    } else {
+      mobileList.innerHTML = sorted.map((t) => {
+        const sideLower = (t.side || "up").toLowerCase();
+        const closed = isStatClosed(t);
+        const won = effectiveWon(t);
+        const outcomeTag = !closed ? "OPEN" : won ? "WON" : "LOST";
+        const outcomeCls = !closed ? "open" : won ? "won" : "lost";
+        const pnl = tradePnl(t);
+        const pnlText = !t.resolved ? "open" : pnlAtStake(t);
+        const pnlTone = pnl != null ? (pnl >= 0 ? "up" : "down") : "";
+        const time = fmtTs(t.entryTs);
+        const fillPrice = fmtOdds(t.fillPrice);
+        const marketName = slugLabel(t.slug);
+        const marketUrl = slugUrl(t.slug);
+
+        return `
+          <div class="mobile-trade-card">
+            <div class="mobile-card-top">
+              <a href="${marketUrl}" target="_blank" rel="noopener noreferrer" class="mobile-card-slug">${marketName}</a>
+              <span class="badge-outcome ${outcomeCls}">${outcomeTag}</span>
+            </div>
+            <div class="mobile-card-grid">
+              <div class="mobile-stat-col">
+                <span class="mobile-stat-k">Side / Time</span>
+                <span class="mobile-stat-v"><span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span> ${time}</span>
+              </div>
+              <div class="mobile-stat-col">
+                <span class="mobile-stat-k">Fill Price</span>
+                <span class="mobile-stat-v">${fillPrice}</span>
+              </div>
+              <div class="mobile-stat-col">
+                <span class="mobile-stat-k">Net P&L</span>
+                <span class="mobile-stat-v ${pnlTone}">${pnlText}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+  }
 }
 
-export function bindTradesTableSort(root, onSort) {
+export function bindTradesTableSort(root = document, onSort) {
   root.getElementById("trades-table")?.addEventListener("click", (e) => {
     const th = e.target.closest("th[data-sort]");
     if (!th) return;
@@ -94,6 +151,6 @@ export function bindTradesTableSort(root, onSort) {
       sortKey = key;
       sortDir = -1;
     }
-    onSort();
+    if (onSort) onSort();
   });
 }

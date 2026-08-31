@@ -7,8 +7,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from pmtrader.config import env
@@ -27,13 +27,22 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
     app.state.order_client = order_client
     app.state.trader = trader
 
+    @app.middleware("http")
+    async def add_no_cache_headers(request: Request, call_next: Any) -> Response:
+        response = await call_next(request)
+        # Ensure fresh UI assets without aggressive browser caching
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC_DIR / "index.html")
+        return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     @app.get("/styles.css")
     def styles() -> FileResponse:
-        return FileResponse(STATIC_DIR / "styles.css", media_type="text/css")
+        return FileResponse(STATIC_DIR / "styles.css", media_type="text/css", headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
     @app.get("/api/config")
     def api_config() -> dict[str, Any]:

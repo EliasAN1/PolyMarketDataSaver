@@ -4,97 +4,275 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="color-scheme" content="dark" />
-  <meta name="theme-color" content="#060a09" />
-  <title>pmtrader</title>
+  <meta name="theme-color" content="#070b09" />
+  <title>Centionaire · Live Trader</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css?v=3" />
 </head>
 <body>
-  <div class="shell is-loading">
-    <header class="top">
-      <div class="brand">
-        <span class="brand-mark"></span>
-        <span class="brand-name">Centionaire</span>
+  <div class="shell is-loading" id="app-shell">
+    <!-- Top Navigation Header -->
+    <header class="top-nav">
+      <div class="brand-group">
+        <div class="brand-logo">
+          <span class="radar-ping"></span>
+          <span class="radar-dot"></span>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">Centionaire</span>
+        </div>
       </div>
-      <div class="top-actions">
-        <button type="button" id="profile-btn" class="btn ghost" aria-label="Profile">Profile</button>
-        <button type="button" id="refresh-btn" class="btn ghost" aria-label="Refresh">↻</button>
+
+      <div class="header-status-group">
+        <div class="nav-chip balance-chip" id="nav-balance-chip" title="Collateral Balance">
+          <span class="chip-label">Cash</span>
+          <span class="chip-val mono" id="nav-balance-val">—</span>
+        </div>
+        <div class="nav-chip live-state-chip" id="nav-live-chip">
+          <span class="pulse-dot"></span>
+          <span class="chip-text" id="nav-live-status">CONNECTING</span>
+        </div>
+      </div>
+
+      <div class="nav-actions">
+        <button type="button" id="profile-btn" class="nav-btn profile-btn" aria-label="Wallet Profile">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span class="btn-text">Wallet</span>
+        </button>
+        <button type="button" id="refresh-btn" class="nav-btn icon-only-btn" aria-label="Refresh data">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
       </div>
     </header>
 
-    <main>
-      <section id="hero" class="hero is-empty">
-        <div class="hero-inner">
-          <p id="hero-greeting" class="hero-greeting">Good evening</p>
-          <div class="hero-row">
-            <div class="hero-net-wrap">
-              <h1 id="hero-net" class="hero-net">—</h1>
-              <span id="hero-delta" class="hero-delta" hidden></span>
+    <main class="main-content">
+      <!-- Live Trading Radar Section -->
+      <section class="radar-card" id="radar-section">
+        <div class="radar-header">
+          <div class="radar-title-wrap">
+            <div class="section-tag">
+              <span class="tag-pulse"></span>
+              LIVE WINDOW
             </div>
-            <span id="hero-badge" class="hero-badge"></span>
+            <h2 class="radar-slug mono" id="radar-slug">—</h2>
           </div>
-          <p id="hero-sub" class="hero-sub"></p>
-          <div class="hero-metrics">
-            <article class="hero-metric">
-              <span class="metric-label">Balance</span>
-              <strong id="stat-balance" class="metric-value">—</strong>
-            </article>
-            <article class="hero-metric">
-              <span class="metric-label">Win rate</span>
-              <strong id="stat-win-rate" class="metric-value">—</strong>
-            </article>
+          <div class="radar-countdown-wrap">
+            <div class="countdown-badge" id="radar-time-badge">
+              <span class="countdown-icon">⏱</span>
+              <span id="radar-time-left" class="mono">—</span>
+            </div>
+            <div class="window-state-tag" id="radar-state-tag">STANDBY</div>
+          </div>
+        </div>
+
+        <!-- Progress Timeline -->
+        <div class="window-timeline">
+          <div class="timeline-track">
+            <div class="timeline-span-zone" id="timeline-watch-zone" style="left: 0%; width: 100%;"></div>
+            <div class="timeline-progress" id="timeline-progress-bar" style="width: 0%;"></div>
+            <div class="timeline-cursor" id="timeline-cursor" style="left: 0%;"></div>
+          </div>
+          <div class="timeline-labels">
+            <span>0:00 Open</span>
+            <span id="timeline-mid-label" class="mono">Watch: 0:00–1:00</span>
+            <span>5:00 Close</span>
+          </div>
+        </div>
+
+        <!-- 4 Core Pillars Matrix -->
+        <div class="pillars-grid" id="radar-pillars">
+          <!-- Pillar 1: Price to Beat -->
+          <article class="pillar-card ptb-pillar">
+            <div class="pillar-top">
+              <span class="pillar-label">Price To Beat</span>
+              <span class="pillar-badge" id="ptb-source-badge">CHAINLINK 60S</span>
+            </div>
+            <div class="pillar-main">
+              <span class="pillar-value mono" id="pillar-ptb-val">—</span>
+            </div>
+            <div class="pillar-footer">
+              <span class="pillar-sub">Window Baseline</span>
+            </div>
+          </article>
+
+          <!-- Pillar 2: Live Spot Delta -->
+          <article class="pillar-card btc-pillar" id="pillar-btc-card">
+            <div class="pillar-top">
+              <span class="pillar-label">BTC Spot vs PTB</span>
+              <span class="pillar-badge" id="btc-side-badge">SIDE —</span>
+            </div>
+            <div class="pillar-main">
+              <span class="pillar-value mono" id="pillar-btc-delta">—</span>
+              <span class="pillar-spot-val mono" id="pillar-btc-spot">BTC $—</span>
+            </div>
+            <div class="pillar-footer">
+              <span class="pillar-sub" id="pillar-btc-sub">Target: ≤ $50</span>
+            </div>
+          </article>
+
+          <!-- Pillar 3: Polymarket Odds -->
+          <article class="pillar-card odds-pillar">
+            <div class="pillar-top">
+              <span class="pillar-label">Polymarket Odds</span>
+              <span class="pillar-badge" id="odds-band-badge">BAND 0.35–0.35</span>
+            </div>
+            <div class="odds-dual-wrap">
+              <div class="odds-side-box up" id="odds-up-box">
+                <span class="odds-side-label">UP</span>
+                <span class="odds-val mono" id="odds-up-val">—</span>
+                <span class="odds-sub mono" id="odds-up-mid">mid —</span>
+              </div>
+              <div class="odds-ratio-bar">
+                <div class="odds-ratio-fill" id="odds-ratio-fill" style="width: 50%;"></div>
+              </div>
+              <div class="odds-side-box down" id="odds-down-box">
+                <span class="odds-side-label">DOWN</span>
+                <span class="odds-val mono" id="odds-down-val">—</span>
+                <span class="odds-sub mono" id="odds-down-mid">mid —</span>
+              </div>
+            </div>
+          </article>
+
+          <!-- Pillar 4: TWAP & Venues -->
+          <article class="pillar-card twap-pillar">
+            <div class="pillar-top">
+              <span class="pillar-label">TWAP & Venues</span>
+              <span class="pillar-badge" id="venues-count-badge">0 / 4 VENUES</span>
+            </div>
+            <div class="pillar-main">
+              <span class="pillar-value mono" id="pillar-twap-delta">—</span>
+              <span class="pillar-twap-val mono" id="pillar-twap-abs">TWAP $—</span>
+            </div>
+            <div class="pillar-footer">
+              <span class="pillar-sub" id="pillar-venues-sub">Consensus agreement</span>
+            </div>
+          </article>
+        </div>
+
+        <!-- Strategy Checklist Container -->
+        <div class="strategy-checklist-container">
+          <div class="checklist-header">
+            <span class="checklist-title">Strategy Entry Checks</span>
+            <span class="checklist-summary mono" id="checklist-summary-badge">0 / 8 Passing</span>
+          </div>
+          <div class="checks-grid" id="radar-checks-grid">
+            <!-- Rendered by live.js -->
           </div>
         </div>
       </section>
 
-      <div id="window-section" class="accordion is-open" data-section="window">
-        <button type="button" class="accordion-trigger" aria-expanded="true">
-          <span class="accordion-label">Current window</span>
-          <span id="window-status" class="window-status">—</span>
-        </button>
-        <div class="accordion-panel">
-          <div class="accordion-content">
-            <div id="window-inner" class="window-live"></div>
+      <!-- Performance Summary Hero -->
+      <section class="performance-card" id="performance-section">
+        <div class="perf-header">
+          <div class="perf-title-group">
+            <span class="perf-greeting" id="hero-greeting">Session Overview</span>
+            <span class="hero-badge" id="hero-badge">Standby</span>
+          </div>
+          <span class="hero-sub mono" id="hero-sub">0W · 0L · 0 resolved</span>
+        </div>
+
+        <div class="perf-tiles-grid">
+          <!-- Tile 1: Realized Net P&L (Primary) -->
+          <div class="perf-tile primary-tile">
+            <span class="tile-label">Realized Net P&L</span>
+            <div class="tile-val-wrap">
+              <h1 class="hero-net mono" id="hero-net">$0.00</h1>
+              <span class="hero-delta mono" id="hero-delta" hidden></span>
+            </div>
+            <span class="tile-sub" id="hero-sub-net">Session Profit</span>
+          </div>
+
+          <!-- Tile 2: Cash Balance -->
+          <div class="perf-tile">
+            <span class="tile-label">Wallet Collateral</span>
+            <strong class="tile-val mono" id="stat-balance">—</strong>
+            <span class="tile-sub">pUSD Cash</span>
+          </div>
+
+          <!-- Tile 3: Win Rate -->
+          <div class="perf-tile">
+            <span class="tile-label">Win Rate</span>
+            <strong class="tile-val mono" id="stat-win-rate">—</strong>
+            <span class="tile-sub" id="stat-win-count">0 wins</span>
+          </div>
+
+          <!-- Tile 4: Current Streak -->
+          <div class="perf-tile">
+            <span class="tile-label">Active Streak</span>
+            <strong class="tile-val mono" id="stat-streak">—</strong>
+            <span class="tile-sub" id="stat-streak-sub">Session</span>
           </div>
         </div>
-      </div>
+      </section>
 
-      <section id="recap-section" class="recap" aria-label="Recent trades" hidden>
+      <!-- Recent Executions Carousel / Stream -->
+      <section class="recent-feed-section" id="recap-section" aria-label="Recent Executions" hidden>
+        <div class="section-title-bar">
+          <h3 class="section-heading">Recent Executions</h3>
+          <span class="section-subtext">Last 5 Market Fills</span>
+        </div>
         <div id="recap-inner"></div>
       </section>
 
-      <section id="trades-section" class="trades-block" hidden>
+      <!-- Comprehensive Trades History Table -->
+      <section class="trades-block" id="trades-section" hidden>
         <div class="trades-head">
-          <h2 class="trades-title">Trades</h2>
-          <span id="trades-count" class="trades-count"></span>
+          <div class="trades-title-wrap">
+            <h3 class="section-heading">Trade Executions</h3>
+            <span class="trades-count mono" id="trades-count">0 trades</span>
+          </div>
         </div>
-        <div class="table-scroll">
+        <div class="table-container">
           <table id="trades-table" class="data-table trades-table">
             <thead id="trades-thead"></thead>
             <tbody id="trades-tbody"></tbody>
           </table>
         </div>
+        <!-- Mobile Card View Container -->
+        <div class="mobile-trades-list" id="mobile-trades-list"></div>
       </section>
 
-      <p id="empty-state" class="empty" hidden>No trades yet.</p>
+      <!-- Empty State -->
+      <div id="empty-state" class="empty-state-card" hidden>
+        <div class="empty-icon">⚡</div>
+        <h3>No Trade Executions Yet</h3>
+        <p>The bot is actively monitoring 5m windows. When all strategy criteria align, FAK orders will execute and appear here in real time.</p>
+      </div>
     </main>
   </div>
 
+  <!-- Glass Profile / Wallet Drawer Modal -->
   <div id="profile-overlay" class="profile-overlay" hidden>
-    <div class="profile-window" role="dialog" aria-labelledby="profile-title">
-      <header class="profile-head">
-        <h2 id="profile-title">Profile</h2>
-        <div class="profile-head-actions">
-          <button type="button" id="profile-refresh" class="btn ghost" aria-label="Refresh profile">↻</button>
-          <button type="button" id="profile-close" class="btn ghost" aria-label="Close">✕</button>
+    <div class="profile-drawer" role="dialog" aria-labelledby="profile-title">
+      <header class="drawer-head">
+        <div class="drawer-title-group">
+          <h2 id="profile-title" class="drawer-title">Wallet & Account</h2>
+          <p id="profile-status" class="drawer-subtitle">Loading account details…</p>
+        </div>
+        <div class="drawer-actions">
+          <button type="button" id="profile-refresh" class="drawer-btn" aria-label="Refresh profile">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          </button>
+          <button type="button" id="profile-close" class="drawer-btn close-btn" aria-label="Close modal">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
         </div>
       </header>
-      <p id="profile-status" class="profile-status">Loading…</p>
-      <div id="profile-body" class="profile-body"></div>
+      <div id="profile-body" class="drawer-body">
+        <!-- Rendered by profile.js -->
+      </div>
     </div>
   </div>
 
-  <script type="module" src="/js/app.js"></script>
+  <script type="module" src="/js/app.js?v=3"></script>
 </body>
 </html>

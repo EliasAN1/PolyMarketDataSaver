@@ -1,19 +1,24 @@
 # Match Strategy Lab. One FAK buy per 5m window when every enabled filter is true.
-# Limit price is odds_max (you will not pay above the band).
 
 # Minutes from window open. 2.5–3.0 is 2:30 to 3:00. Last 3 minutes of a 5m window is 2.0–5.0.
-elapsed_from_min = 2.0
-elapsed_to_min = 5.0
+elapsed_from_min = 0.0
+elapsed_to_min = 1.0
 
-# Mid must *enter* [odds_min, odds_max] during the elapsed band (already inside at
-# the first in-band tick does not count). Ask must also be fillable in that band
-# (or ≤ odds_max on a point underdog). FAK limit = odds_max.
-odds_min = 0.20
-odds_max = 0.30
+# Trigger band: chosen side's mid must *enter* [odds_min, odds_max] during the elapsed window
+# (already inside at the first in-band tick does not count).
+# Point underdog: odds_min = odds_max = 0.35 (cross 0.35).
+# Range trigger: e.g. odds_min = 0.30, odds_max = 0.35.
+odds_min = 0.1
+odds_max = 0.35
 
-use_btc_distance = false
-min_btc_away = 5
-max_btc_away = 10
+# FAK limit price (separate from trigger). Willing to pay up to this on the buy.
+# Omit to default to odds_max. Set higher than odds_max to improve fill rate after a cross.
+# Example: trigger at 0.35, pay up to 0.40 → fak_limit = 0.40
+fak_limit = 0.7
+
+use_btc_distance = true
+min_btc_away = 0
+max_btc_away = 50
 
 use_twap = false
 use_venues = false
@@ -22,7 +27,3 @@ min_venues = 2
 stake_usd = 100
 min_seconds_left = 3
 tick_size = "0.01"
-
-# Legacy fallback if you delete elapsed_from_min / elapsed_to_min:
-# use_entry_last = true
-# entry_last_minutes = 3.0

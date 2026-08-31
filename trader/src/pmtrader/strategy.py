@@ -23,7 +23,7 @@ class Decision:
 
 
 def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision:
-    limit = cfg.odds_max
+    limit = cfg.effective_fak_limit()
     if snap.window_end <= 0 or snap.window_start <= 0:
         snap.clear_odds_memory()
         return Decision(None, "no_window", None, limit)
@@ -150,14 +150,11 @@ def _pick_entered_side(snap: LiveSnapshot, lo: float, hi: float) -> Side | None:
 
 
 def _ask_fillable(ask: float, cfg: TraderConfig) -> bool:
-    """Do not send a FAK that would pay outside the Lab odds band.
-
-    Point target (min == max): underdog may fill at or below the level;
-    favorite may fill at or above it, still capped by odds_max.
-    """
+    """Ask must be fillable at or below the FAK cap (may exceed trigger band)."""
     lo, hi = cfg.odds_min, cfg.odds_max
+    cap = cfg.effective_fak_limit()
     if lo < hi:
-        return lo <= ask <= hi
+        return lo <= ask <= cap
     if lo < 0.5:
-        return ask <= lo
-    return lo <= ask <= hi
+        return ask <= cap
+    return lo <= ask <= cap

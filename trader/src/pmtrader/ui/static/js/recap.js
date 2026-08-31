@@ -1,6 +1,6 @@
 import { fmtUsd } from "./stats.js";
-import { fmtTs, slugLabel, slugUrl } from "./format.js";
-import { effectiveWon, isStatClosed, tradePnl, tradeStratLabel } from "./parse.js";
+import { fmtTs, slugLabel, slugUrl, fmtOdds } from "./format.js";
+import { effectiveWon, isStatClosed, tradePnl } from "./parse.js";
 
 export function computeRecap(trades, filterFn = () => true) {
   const list = trades.filter(filterFn);
@@ -51,11 +51,11 @@ function fmtLeft(sec) {
 let countdownTimer = null;
 
 function paintCountdown(root = document) {
-  for (const el of root.querySelectorAll(".recap-left[data-window-end]")) {
+  for (const el of root.querySelectorAll(".trade-time-sub[data-window-end]")) {
     const sec = remainingSeconds(el.dataset.windowEnd);
     if (sec == null) continue;
-    el.textContent = fmtLeft(sec);
-    el.classList.toggle("recap-left-urgent", sec <= 30);
+    el.textContent = `${fmtLeft(sec)} left`;
+    el.classList.toggle("is-urgent", sec <= 30);
   }
 }
 
@@ -65,71 +65,74 @@ export function startRecapCountdown(root = document) {
   countdownTimer = setInterval(() => {
     if (document.hidden) return;
     paintCountdown(root);
-  }, 1_000);
-}
-
-function streakHtml(type, count) {
-  if (!type || count < 1) {
-    return `<strong class="recap-streak neutral">—</strong>`;
-  }
-  const cls = type === "win" ? "up" : "down";
-  const label = type === "win" ? "W" : "L";
-  return `<strong class="recap-streak ${cls}">${count}${label} streak</strong>`;
+  }, 1000);
 }
 
 export function renderRecapHtml(recap) {
   if (!recap.recent.length) return "";
 
-  const streak = streakHtml(recap.streakType, recap.streakCount);
+  const rows = recap.recent
+    .map((t) => {
+      const side = (t.side ?? "up").toUpperCase();
+      const closed = isStatClosed(t);
+      const won = effectiveWon(t);
+      const outcomeText = !closed ? "OPEN" : won ? "WON" : "LOST";
+      const outcomeCls = !closed ? "open" : won ? "win" : "loss";
+      const outcomeBadge = !closed ? "OPEN" : won ? "WIN" : "LOSS";
+      const time = fmtTs(t.entryTs);
+      const market = slugLabel(t.slug);
+      const href = t.slug ? slugUrl(t.slug) : "#";
+      const pnlVal = tradePnl(t);
+      const pnlFormatted = closed ? fmtUsd(pnlVal) : "In Progress";
+      const pnlCls = pnlVal != null ? (pnlVal >= 0 ? "up" : "down") : "";
+      const fill = fmtOdds(t.fillPrice);
+      const leftSec = !closed ? remainingSeconds(t.windowEnd) : null;
+      const timeHtml =
+        leftSec != null
+          ? `<span class="trade-time-sub" data-window-end="${t.windowEnd}">${fmtLeft(leftSec)} left</span>`
+          : `<span class="trade-time-sub">${time}</span>`;
+
+      return `
+        <a class="execution-card" href="${href}" target="_blank" rel="noopener noreferrer">
+          <div class="execution-card-left">
+            <span class="outcome-pill ${outcomeCls}">${outcomeBadge}</span>
+            <div class="execution-meta">
+              <strong class="execution-market">${market}</strong>
+              <div class="execution-subline">
+                <span class="side-tag ${side.toLowerCase()}">${side}</span>
+                <span class="dot-sep">·</span>
+                <span class="fill-tag">@ ${fill}</span>
+                <span class="dot-sep">·</span>
+                ${timeHtml}
+              </div>
+            </div>
+          </div>
+          <div class="execution-card-right">
+            <span class="execution-pnl ${pnlCls}">${pnlFormatted}</span>
+            <span class="external-arrow">↗</span>
+          </div>
+        </a>
+      `;
+    })
+    .join("");
+
   const last5Tone = recap.last5Net >= 0 ? "up" : "down";
   const last5Record =
     recap.last5Wins + recap.last5Losses > 0
       ? `${recap.last5Wins}W · ${recap.last5Losses}L`
       : "—";
 
-  const rows = recap.recent
-    .map((t) => {
-      const side = (t.side ?? "—").toUpperCase();
-      const strat = tradeStratLabel(t);
-      const closed = isStatClosed(t);
-      const won = effectiveWon(t);
-      const outcome = !closed ? "O" : won ? "W" : "L";
-      const tone = outcome === "W" ? "win" : outcome === "L" ? "loss" : "open";
-      const time = fmtTs(t.entryTs);
-      const market = slugLabel(t.slug);
-      const href = t.slug ? slugUrl(t.slug) : "";
-      const pnlContent = closed ? fmtUsd(tradePnl(t)) : "open";
-      const leftSec = tone === "open" ? remainingSeconds(t.windowEnd) : null;
-      const timeHtml =
-        leftSec != null
-          ? `<span class="recap-time recap-left" data-window-end="${t.windowEnd}">${fmtLeft(leftSec)}</span>`
-          : `<span class="recap-time">${time}</span>`;
-      const inner =
-        `<span class="recap-trade-body">` +
-        `<span class="recap-outcome">${outcome}</span>` +
-        `<span class="recap-pnl">${pnlContent}</span>` +
-        `<span class="recap-meta">${side} · ${strat}</span>` +
-        timeHtml +
-        `<span class="recap-market">${market}</span>` +
-        `</span>`;
-      const rowClass = `recap-trade ${tone}`;
-      if (!href) {
-        return `<li class="${rowClass}">${inner}</li>`;
-      }
-      return `<li><a class="${rowClass}" href="${href}" target="_blank" rel="noopener noreferrer" aria-label="Open ${market} on Polymarket">${inner}</a></li>`;
-    })
-    .join("");
-
-  return `<div class="recap-grid">
-    <article class="recap-card">
-      <span class="recap-label">Current streak</span>
-      ${streak}
-    </article>
-    <article class="recap-card">
-      <span class="recap-label">Last 5 net</span>
-      <strong class="recap-value ${last5Tone}">${fmtUsd(recap.last5Net)}</strong>
-      <span class="recap-sub">${last5Record}</span>
-    </article>
-  </div>
-  <ol class="recap-trades" aria-label="Last 5 trades">${rows}</ol>`;
+  return `
+    <div class="executions-summary-strip">
+      <div class="summary-pill">
+        <span class="summary-label">Last 5 Net P&L</span>
+        <strong class="summary-val mono ${last5Tone}">${fmtUsd(recap.last5Net)}</strong>
+      </div>
+      <div class="summary-pill">
+        <span class="summary-label">5-Trade Record</span>
+        <span class="summary-val mono">${last5Record}</span>
+      </div>
+    </div>
+    <div class="executions-feed">${rows}</div>
+  `;
 }

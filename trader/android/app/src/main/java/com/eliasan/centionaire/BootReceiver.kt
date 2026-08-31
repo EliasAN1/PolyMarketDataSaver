@@ -1,4 +1,4 @@
-package com.eliasan.pmtrader
+package com.eliasan.centionaire
 
 import android.content.BroadcastReceiver
 import android.content.Context

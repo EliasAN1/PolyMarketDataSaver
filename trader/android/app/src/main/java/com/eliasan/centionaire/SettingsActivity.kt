@@ -1,9 +1,9 @@
-package com.eliasan.pmtrader
+package com.eliasan.centionaire
 
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import com.eliasan.pmtrader.databinding.ActivitySettingsBinding
+import com.eliasan.centionaire.databinding.ActivitySettingsBinding
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySettingsBinding
@@ -12,7 +12,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        binding.urlInput.setText(Prefs.url(this).ifBlank { PmApp.DEFAULT_URL })
+        binding.urlInput.setText(Prefs.url(this).ifBlank { App.DEFAULT_URL })
         binding.saveBtn.setOnClickListener {
             var url = binding.urlInput.text.toString().trim()
             if (url.isNotEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {

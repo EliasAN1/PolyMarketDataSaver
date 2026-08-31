@@ -1,4 +1,4 @@
-package com.eliasan.pmtrader
+package com.eliasan.centionaire
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -13,7 +13,7 @@ import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.eliasan.pmtrader.databinding.ActivityMainBinding
+import com.eliasan.centionaire.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding

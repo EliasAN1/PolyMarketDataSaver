@@ -1,11 +1,11 @@
-package com.eliasan.pmtrader
+package com.eliasan.centionaire
 
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 
-class PmApp : Application() {
+class App : Application() {
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
@@ -15,7 +15,7 @@ class PmApp : Application() {
             )
             manager.createNotificationChannel(
                 NotificationChannel(CHANNEL_TRADES, getString(R.string.trades_channel), NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "FAK fills and order sends"
+                    description = "Fills and order sends"
                 },
             )
             manager.createNotificationChannel(
@@ -30,7 +30,7 @@ class PmApp : Application() {
         const val CHANNEL_WATCH = "watch"
         const val CHANNEL_TRADES = "trades"
         const val CHANNEL_RESULTS = "results"
-        const val PREFS = "pmtrader"
+        const val PREFS = "centionaire"
         const val KEY_URL = "server_url"
         const val KEY_SEEN = "seen_event_ids"
         const val DEFAULT_URL = "https://drelias.tail86f11c.ts.net/"

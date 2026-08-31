@@ -4,10 +4,10 @@ plugins {
 }
 
 android {
-    namespace = "com.eliasan.pmtrader"
+    namespace = "com.eliasan.centionaire"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.eliasan.pmtrader"
+        applicationId = "com.eliasan.centionaire"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

@@ -56,15 +56,37 @@ export function oddsToneClass(oddsFrac) {
 
 export function cashoutPnlUsd(t) {
   if (!t.cashout?.price || !t.cashout?.shares) return null;
-  const entryCost = (t.fillPrice ?? 0) * (t.fillShares ?? 0) + (t.feeUsd ?? 0);
+  const entryFee = Number(t.feeUsd) > 0 ? Number(t.feeUsd) : takerFee(t.fillShares, t.fillPrice);
+  const entryCost = (t.fillPrice ?? 0) * (t.fillShares ?? 0) + entryFee;
   const exitProceeds = t.cashout.price * t.cashout.shares - (t.cashout.fee ?? 0);
   return exitProceeds - entryCost;
 }
 
-/** Dollars won/lost on this fill — not a rescaled stake. */
+const CRYPTO_TAKER_FEE_RATE = 0.07;
+
+/** Polymarket crypto taker: shares × rate × p × (1 − p), 5 decimal USDC. */
+export function takerFee(shares, price, rate = CRYPTO_TAKER_FEE_RATE) {
+  const s = Number(shares);
+  const p = Number(price);
+  if (!(s > 0) || !(p > 0) || p >= 1 || !(rate > 0)) return 0;
+  const fee = Math.round(s * rate * p * (1 - p) * 1e5) / 1e5;
+  return fee >= 1e-5 ? fee : 0;
+}
+
+/** Dollars won/lost on this fill, after crypto taker fee. */
 export function tradePnl(t) {
-  if (t.resolved && t.netPnl != null && Number.isFinite(t.netPnl)) return t.netPnl;
   if (t.cashedOut) return cashoutPnlUsd(t);
+  if (!t.resolved) return null;
+  const shares = Number(t.fillShares);
+  const price = Number(t.fillPrice);
+  if (shares > 0 && price > 0) {
+    const cost = price * shares;
+    const stored = Number(t.feeUsd ?? t.fees);
+    const fee = stored > 0 ? stored : takerFee(shares, price);
+    const payout = t.won ? shares : 0;
+    return payout - cost - fee;
+  }
+  if (t.netPnl != null && Number.isFinite(t.netPnl)) return t.netPnl;
   return null;
 }
 
@@ -274,7 +296,7 @@ export function buildTrades(records) {
       fillPrice: e.fill_price,
       fillShares: e.fill_shares,
       stake,
-      feeUsd: e.fee_usd ?? null,
+      feeUsd: e.fee_usd ?? (fillPrice != null && fillShares != null ? takerFee(fillShares, fillPrice) : null),
       upAsk,
       downAsk,
       upBid,

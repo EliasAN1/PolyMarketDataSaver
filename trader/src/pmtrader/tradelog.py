@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pmtrader.fees import taker_fee
+
 
 def parse_fill(response: dict[str, Any] | None, *, limit: float, stake_usd: float) -> tuple[str, float, float]:
     resp = response or {}
@@ -45,6 +47,7 @@ def entry_record(
         "stake_usd": round(fill_price * fill_shares, 4) if fill_price and fill_shares else stake_usd,
         "fill_price": fill_price,
         "fill_shares": fill_shares,
+        "fee_usd": round(taker_fee(fill_shares, fill_price), 5),
     }
     if result.dry_run:
         row["dry_run"] = True
@@ -63,7 +66,11 @@ def resolve_record(entry: dict[str, Any], *, outcome: str, now_s: float) -> dict
     fill_price = float(entry.get("fill_price") or 0)
     fill_shares = float(entry.get("fill_shares") or 0)
     cost = (fill_price * fill_shares) if fill_price and fill_shares else stake
+    fee = float(entry.get("fee_usd") or 0)
+    if fee <= 0 and fill_price and fill_shares:
+        fee = taker_fee(fill_shares, fill_price)
     payout = fill_shares if won else 0.0
+    gross = payout - cost
     return {
         "event": "resolve",
         "order_id": entry.get("order_id"),
@@ -72,7 +79,10 @@ def resolve_record(entry: dict[str, Any], *, outcome: str, now_s: float) -> dict
         "ts": int(now_s),
         "won": won,
         "outcome": outcome,
-        "net_pnl_usd": round(payout - cost, 4),
+        "fee_usd": round(fee, 5),
+        "gross_pnl_usd": round(gross, 4),
+        "total_fees_usd": round(fee, 5),
+        "net_pnl_usd": round(gross - fee, 4),
     }
 
 
@@ -135,6 +145,7 @@ def _order_as_entry(row: dict[str, Any]) -> dict[str, Any]:
         "stake_usd": row.get("stake_usd"),
         "fill_price": fill_price,
         "fill_shares": fill_shares,
+        "fee_usd": round(taker_fee(fill_shares, fill_price), 5),
     }
 
 

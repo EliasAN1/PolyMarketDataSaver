@@ -1,4 +1,4 @@
-package com.eliasan.pmtrader
+package com.eliasan.centionaire
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -29,7 +29,7 @@ class WatchService : Service() {
     override fun onCreate() {
         super.onCreate()
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "pmtrader:watch").apply {
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "centionaire:watch").apply {
             setReferenceCounted(false)
             acquire()
         }
@@ -39,9 +39,13 @@ class WatchService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundWatch()
-        when (intent?.getStringExtra(EXTRA_TEST)) {
-            "entry" -> postTest("entry")
-            "resolve" -> postTest("resolve")
+        try {
+            when (intent?.getStringExtra(EXTRA_TEST)) {
+                "entry" -> postTest("entry")
+                "resolve" -> postTest("resolve")
+            }
+        } catch (_: Exception) {
+            // Test ping must never take down the watcher.
         }
         return START_STICKY
     }
@@ -60,7 +64,7 @@ class WatchService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val notification: Notification = NotificationCompat.Builder(this, PmApp.CHANNEL_WATCH)
+        val notification: Notification = NotificationCompat.Builder(this, App.CHANNEL_WATCH)
             .setSmallIcon(R.drawable.ic_mark)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.watching))
@@ -119,7 +123,7 @@ class WatchService : Service() {
                 val price = event.optDouble("fill_price", Double.NaN)
                 val px = if (price.isNaN()) "" else " @ ${"%.3f".format(price)}"
                 Triple(
-                    PmApp.CHANNEL_TRADES,
+                    App.CHANNEL_TRADES,
                     "${prefix}Trade $side",
                     "$slug$px",
                 )
@@ -129,7 +133,7 @@ class WatchService : Service() {
                 val pnl = event.optDouble("net_pnl_usd", Double.NaN)
                 val pnlTxt = if (pnl.isNaN()) "" else " PnL ${"%.2f".format(pnl)}"
                 Triple(
-                    PmApp.CHANNEL_RESULTS,
+                    App.CHANNEL_RESULTS,
                     if (won) "${prefix}WIN $side" else "${prefix}LOSS $side",
                     "$slug$pnlTxt",
                 )
@@ -157,7 +161,7 @@ class WatchService : Service() {
         }
     }
 
-    fun postTest(kind: String) {
+    private fun postTest(kind: String) {
         val sample = JSONObject()
             .put("id", "test:$kind:${System.currentTimeMillis()}")
             .put("event", kind)
@@ -165,8 +169,8 @@ class WatchService : Service() {
             .put("side", "UP")
             .put("fill_price", 0.35)
             .put("won", kind == "resolve")
-            .put("net_pnl_usd", if (kind == "resolve") 65.0 else Double.NaN)
             .put("dry_run", true)
+        if (kind == "resolve") sample.put("net_pnl_usd", 65.0)
         notifyEvent(sample)
     }
 

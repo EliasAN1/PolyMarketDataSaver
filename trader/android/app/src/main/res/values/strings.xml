@@ -1,13 +1,13 @@
 <resources>
-    <string name="app_name">pmtrader</string>
+    <string name="app_name">Centionaire</string>
     <string name="settings">Server</string>
     <string name="save">Save</string>
     <string name="server_url_hint">https://your-pc.tailnet.ts.net/</string>
     <string name="server_help">Same URL you open in the phone browser after Tailscale Serve. The dashboard loads in this app; fills and results notify even when the screen is off.</string>
-    <string name="watch_channel">Trader watch</string>
+    <string name="watch_channel">Centionaire</string>
     <string name="trades_channel">Trades</string>
     <string name="results_channel">Results</string>
-    <string name="watching">Watching trader…</string>
+    <string name="watching">Watching Centionaire…</string>
     <string name="test_trade">Test trade notification</string>
     <string name="test_result">Test result notification</string>
 </resources>

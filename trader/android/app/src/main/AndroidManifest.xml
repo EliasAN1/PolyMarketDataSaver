@@ -18,6 +18,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Centionaire"
         android:usesCleartextTraffic="true">
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
@@ -37,6 +43,14 @@
             android:name=".WatchService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".AutoService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT" />
+            </intent-filter>
+        </service>
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"

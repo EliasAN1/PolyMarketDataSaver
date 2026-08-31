@@ -47,9 +47,18 @@ cd trader\android
 1. Open **Centionaire**.
 2. Tap **Server** and paste the Tailscale URL printed by `tailscale-ui.ps1` (example `https://drelias.tail86f11c.ts.net/`).
 3. Save. The live dashboard should appear.
-4. A persistent **Watching Centionaire…** notification means background polling is on. Fills use the **Trades** channel; wins/losses use **Results**.
+4. A persistent **Centionaire / Live** notification means background polling is on. Fills: **Bought UP** `35.0¢ · $50`. Results: **UP won** `+$90.58`.
 
 The first poll seeds history **without** notifying, so old trades do not spam you.
+
+## Android Auto
+
+The car cannot show the full dashboard (Google does not allow a WebView on Auto). Centionaire still works in the car as:
+
+1. **Alerts** — fills and results appear as Auto messages (style A: Bought UP / UP won).
+2. **Centionaire app in Auto** — a two-line status screen (live state + last alert). Open it from the Auto app list after the phone is connected.
+
+Needs the same Tailscale + phone app running. Sideloaded APKs show up once the phone is plugged in / wireless Auto is connected. If the car list is empty, open **Android Auto** on the phone → **Customize launcher** and enable **Centionaire**.
 
 ## If the page is blank
 

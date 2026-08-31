@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=3" />
+  <link rel="stylesheet" href="/styles.css?v=4" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
@@ -58,19 +58,19 @@
       <!-- Live Trading Radar Section -->
       <section class="radar-card" id="radar-section">
         <div class="radar-header">
-          <div class="radar-title-wrap">
-            <div class="section-tag">
-              <span class="tag-pulse"></span>
-              LIVE WINDOW
-            </div>
-            <h2 class="radar-slug mono" id="radar-slug">—</h2>
+          <div class="section-tag">
+            <span class="tag-pulse"></span>
+            LIVE WINDOW
           </div>
           <div class="radar-countdown-wrap">
             <div class="countdown-badge" id="radar-time-badge">
-              <span class="countdown-icon">⏱</span>
+              <svg class="countdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
               <span id="radar-time-left" class="mono">—</span>
             </div>
-            <div class="window-state-tag" id="radar-state-tag">STANDBY</div>
+            <div class="window-state-tag" id="radar-state-tag">Idle</div>
           </div>
         </div>
 
@@ -273,6 +273,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=3"></script>
+  <script type="module" src="/js/app.js?v=4"></script
 </body>
 </html>

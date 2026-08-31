@@ -33,6 +33,11 @@ class App : Application() {
         const val PREFS = "centionaire"
         const val KEY_URL = "server_url"
         const val KEY_SEEN = "seen_event_ids"
+        const val KEY_LIVE_STATE = "live_state"
+        const val KEY_LIVE_SLUG = "live_slug"
+        const val KEY_LIVE_SIDE = "live_side"
+        const val KEY_LAST_TITLE = "last_title"
+        const val KEY_LAST_TEXT = "last_text"
         const val DEFAULT_URL = "https://drelias.tail86f11c.ts.net/"
     }
 }

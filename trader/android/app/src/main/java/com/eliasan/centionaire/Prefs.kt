@@ -32,4 +32,36 @@ object Prefs {
             .putStringSet(App.KEY_SEEN, trimmed)
             .apply()
     }
+
+    fun setLive(context: Context, state: String?, slug: String?, side: String?) {
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(App.KEY_LIVE_STATE, state.orEmpty())
+            .putString(App.KEY_LIVE_SLUG, slug.orEmpty())
+            .putString(App.KEY_LIVE_SIDE, side.orEmpty())
+            .apply()
+    }
+
+    fun setLastAlert(context: Context, title: String, text: String) {
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(App.KEY_LAST_TITLE, title)
+            .putString(App.KEY_LAST_TEXT, text)
+            .apply()
+    }
+
+    fun liveState(context: Context): String =
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE).getString(App.KEY_LIVE_STATE, "").orEmpty()
+
+    fun liveSlug(context: Context): String =
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE).getString(App.KEY_LIVE_SLUG, "").orEmpty()
+
+    fun liveSide(context: Context): String =
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE).getString(App.KEY_LIVE_SIDE, "").orEmpty()
+
+    fun lastTitle(context: Context): String =
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE).getString(App.KEY_LAST_TITLE, "").orEmpty()
+
+    fun lastText(context: Context): String =
+        context.getSharedPreferences(App.PREFS, Context.MODE_PRIVATE).getString(App.KEY_LAST_TEXT, "").orEmpty()
 }

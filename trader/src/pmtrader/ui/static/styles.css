@@ -341,16 +341,10 @@ body {
 
 .radar-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
-}
-
-.radar-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .section-tag {
@@ -379,19 +373,16 @@ body {
   50% { opacity: 0.4; transform: scale(0.85); }
 }
 
-.radar-slug {
-  font-family: var(--font-mono);
-  font-size: 1.15rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-main);
-  word-break: break-all;
-}
-
 .radar-countdown-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.countdown-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .countdown-badge {
@@ -416,6 +407,9 @@ body {
 }
 
 .window-state-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 0.72rem;
   font-weight: 700;
@@ -426,6 +420,13 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.window-state-tag .state-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .window-state-tag.state-ready {

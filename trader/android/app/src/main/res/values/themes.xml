@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.PmTrader" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">#070B09</item>
+        <item name="android:navigationBarColor">#070B09</item>
+        <item name="colorPrimary">#3DDC97</item>
+        <item name="android:windowBackground">#070B09</item>
+    </style>
+</resources>

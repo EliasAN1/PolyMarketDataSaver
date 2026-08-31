@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import dataclass, field
 
 VENUE_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot", "binance_futures")
+SPOT_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot")
 
 
 def _f(value: object | None) -> float | None:
@@ -88,7 +90,20 @@ class LiveSnapshot:
 
     @property
     def btc(self) -> float | None:
-        return self.spots["binance_spot"] or self.spots["coinbase_spot"] or self.spots["bybit_spot"]
+        values = [p for name in SPOT_SOURCES if (p := self.spots.get(name)) is not None]
+        if not values:
+            return None
+        return statistics.median(values)
+
+    def spot_deltas(self) -> dict[str, float]:
+        if self.ptb is None:
+            return {}
+        out: dict[str, float] = {}
+        for name in VENUE_SOURCES:
+            price = self.spots.get(name)
+            if price is not None:
+                out[name] = round(price - self.ptb, 2)
+        return out
 
     def btc_minus_ptb(self) -> float | None:
         if self.btc is None or self.ptb is None:

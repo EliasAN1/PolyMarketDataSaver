@@ -3,7 +3,7 @@
 Tick replay (iter_snapshots) never changes for a closed window, only the
 strategy variables do. So we sample every window once into a dense
 1-second-resolution tape and cache it in a separate SQLite file
-(data/lab_cache.db). The Strategy Lab frontend then re-evaluates the combo
+(data/lab_cache_v2.db). The Strategy Lab frontend then re-evaluates the combo
 strategy against that tape entirely in the browser, so changing a variable
 never touches SQLite again.
 
@@ -33,7 +33,7 @@ from pmdsaver.backtest.replay import (
 )
 from pmdsaver.runtime import data_dir
 
-CACHE_FILE_NAME = "lab_cache.db"
+CACHE_FILE_NAME = "lab_cache_v2.db"
 ROUND_PRICE = 4
 ROUND_DIST = 3
 ROUND_VOLUME = 3

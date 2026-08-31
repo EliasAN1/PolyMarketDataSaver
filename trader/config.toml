@@ -17,6 +17,9 @@ odds_max = 0.35
 fak_limit = 0.7
 
 use_btc_distance = true
+# Venue spreads (USD vs USDT) can be ~$30 apart. With min_btc_away = 0, side pick
+# can flip on venue noise alone. Prefer use_twap = true (RTDS TWAP matches PTB feed),
+# use_venues = true with min_venues = 2, or min_btc_away >= 40.
 min_btc_away = 0
 max_btc_away = 50
 

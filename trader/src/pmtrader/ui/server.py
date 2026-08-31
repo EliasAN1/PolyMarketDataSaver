@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +27,12 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
     app.state.log_path = log_path
     app.state.order_client = order_client
     app.state.trader = trader
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.middleware("http")
     async def add_no_cache_headers(request: Request, call_next: Any) -> Response:
@@ -88,6 +95,46 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
     @app.get("/api/live")
     def api_live() -> JSONResponse:
         return JSONResponse(live_payload(app.state.trader))
+
+    @app.get("/api/notify")
+    def api_notify() -> JSONResponse:
+        """Compact event list for the Android watcher (fills + settlement)."""
+        rows = analyzer_records(app.state.log_path)
+        events: list[dict[str, Any]] = []
+        for row in rows[-50:]:
+            event = str(row.get("event") or "")
+            order_id = str(row.get("order_id") or "")
+            ts = int(row.get("ts") or 0)
+            events.append(
+                {
+                    "id": f"{event}:{order_id}:{ts}",
+                    "event": event,
+                    "order_id": order_id,
+                    "slug": row.get("slug"),
+                    "side": row.get("side"),
+                    "ts": ts,
+                    "won": row.get("won"),
+                    "outcome": row.get("outcome"),
+                    "fill_price": row.get("fill_price"),
+                    "stake_usd": row.get("stake_usd"),
+                    "net_pnl_usd": row.get("net_pnl_usd"),
+                    "dry_run": bool(row.get("dry_run")),
+                }
+            )
+        live = live_payload(app.state.trader)
+        return JSONResponse(
+            {
+                "events": events,
+                "live": {
+                    "slug": live.get("slug"),
+                    "state": live.get("state"),
+                    "traded": live.get("traded"),
+                    "side": live.get("side"),
+                    "seconds_left": live.get("seconds_left"),
+                    "elapsed_s": live.get("elapsed_s"),
+                },
+            }
+        )
 
     @app.get("/api/profile")
     def api_profile() -> JSONResponse:

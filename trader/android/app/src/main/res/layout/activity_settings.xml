@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#070B09"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/server_help"
+        android:textColor="#9BB5A8"
+        android:textSize="14sp" />
+
+    <EditText
+        android:id="@+id/url_input"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="@string/server_url_hint"
+        android:inputType="textUri"
+        android:textColor="#E8F5EE"
+        android:textColorHint="#5A7368" />
+
+    <Button
+        android:id="@+id/save_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/save" />
+
+    <Button
+        android:id="@+id/test_trade_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/test_trade" />
+
+    <Button
+        android:id="@+id/test_result_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/test_result" />
+</LinearLayout>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import statistics
 import time
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -388,7 +389,8 @@ def iter_snapshots(conn: sqlite3.Connection, tape: WindowTape) -> Iterator[Snaps
     }
 
     def emit() -> Snapshot:
-        btc = spots["binance_spot"] or spots["coinbase_spot"] or spots["bybit_spot"]
+        spot_values = [spots[k] for k in ("binance_spot", "coinbase_spot", "bybit_spot") if spots.get(k) is not None]
+        btc = statistics.median(spot_values) if spot_values else None
         return Snapshot(
             ts_ms=snap.ts_ms,
             elapsed_s=snap.elapsed_s,

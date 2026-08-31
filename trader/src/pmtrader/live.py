@@ -36,12 +36,14 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "running": True,
         "slug": snap.slug,
         "seconds_left": max(0, int(left)) if left is not None else None,
+        "elapsed_s": max(0, int(now - snap.window_start)) if snap.window_start else None,
         "state": state,
         "side": decision.side or side,
         "traded": traded,
         "ptb": snap.ptb,
         "btc": snap.btc,
         "btc_delta": btc_delta,
+        "spot_deltas": snap.spot_deltas(),
         "twap": snap.twap,
         "twap_delta": twap_delta,
         "up_ask": snap.up_ask,
@@ -158,7 +160,11 @@ def _checks(
             "name": "Elapsed Window",
             "target": f"{from_clock}-{to_clock}",
             "ok": in_window and in_elapsed and not_late,
-            "value": f"{int(left)}s left" if left is not None else "No window",
+            "value": (
+                f"{_clock(elapsed)} into window"
+                if elapsed is not None
+                else "No window"
+            ),
             "enabled": True,
         },
         {

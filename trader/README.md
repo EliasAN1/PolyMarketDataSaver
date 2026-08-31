@@ -74,3 +74,7 @@ Analyzer only (no collector):
 ```bash
 python -m pmtrader.ui
 ```
+
+## Android APK
+
+See [`android/README.md`](android/README.md). The phone app loads this same UI over Tailscale and notifies on fills and settlement.

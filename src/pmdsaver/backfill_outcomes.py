@@ -42,7 +42,9 @@ def _backup(path: Path) -> Path:
 
 
 def _update_lab_cache(slug: str, outcome: str, final_price: str | None) -> None:
-    cache = data_dir() / "lab_cache.db"
+    from pmdsaver.backtest.tape import CACHE_FILE_NAME
+
+    cache = data_dir() / CACHE_FILE_NAME
     if not cache.exists():
         return
     conn = sqlite3.connect(cache)

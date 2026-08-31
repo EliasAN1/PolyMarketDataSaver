@@ -19,6 +19,7 @@ from pmtrader.clock import (
 from pmtrader.config import TraderConfig, env
 from pmtrader.gamma import GammaClient, MarketInfo, extract_final_price, extract_resolved_outcome
 from pmtrader.orders import OrderClient
+from pmtrader.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, evaluate
 from pmtrader.tradelog import entry_record, resolve_record, unresolved_entries
@@ -33,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 ROLLOVER_LEAD_SECONDS = 30
 MARKET_POLL_SECONDS = 0.25
-SETTLE_SECONDS = 15
+SETTLE_SECONDS = 3
+RESOLVE_AFTER_SECONDS = 3
 
 
 @dataclass
@@ -263,18 +265,51 @@ class Trader:
         for entry in pending:
             slug = str(entry.get("slug") or "")
             window = window_from_slug(slug)
-            if window is None or now < window.end + 5:
+            if window is None or now < window.end + RESOLVE_AFTER_SECONDS:
                 continue
-            event = await self.gamma.fetch_event(window, missing_ok=True)
-            if event is None:
-                continue
-            outcome = extract_resolved_outcome(event)
+            outcome, source = await self._resolve_outcome(slug, window)
             if outcome is None:
                 continue
             self.orders.append_log(
                 resolve_record(entry, outcome=outcome, now_s=now)
             )
-            logger.info("Resolved %s outcome=%s won=%s", slug, outcome, outcome == entry.get("side"))
+            logger.info(
+                "Resolved %s outcome=%s won=%s (%s)",
+                slug,
+                outcome,
+                outcome == entry.get("side"),
+                source,
+            )
+
+    async def _resolve_outcome(self, slug: str, window: Window) -> tuple[str | None, str]:
+        """Fast CLOB price inference first; Gamma official resolve as fallback."""
+        if self.snap.slug == slug:
+            outcome = infer_outcome_from_clob(
+                up_mid=self.snap.up_mid,
+                down_mid=self.snap.down_mid,
+                up_ask=self.snap.up_ask,
+                down_ask=self.snap.down_ask,
+            )
+            if outcome is not None:
+                return outcome, "clob_live"
+
+        market = await self.gamma.fetch_market(window)
+        if market is not None:
+            odds = await fetch_clob_odds(
+                self.clob._http,
+                up_token_id=market.up_token_id,
+                down_token_id=market.down_token_id,
+            )
+            outcome = infer_outcome_from_clob(**odds)
+            if outcome is not None:
+                return outcome, "clob_rest"
+
+        event = await self.gamma.fetch_event(window, missing_ok=True)
+        if event is not None:
+            outcome = extract_resolved_outcome(event)
+            if outcome is not None:
+                return outcome, "gamma"
+        return None, ""
 
     async def _status_loop(self) -> None:
         while not self._stop.is_set():

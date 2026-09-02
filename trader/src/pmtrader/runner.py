@@ -230,14 +230,17 @@ class Trader:
                 target += 1.0
             await asyncio.sleep(target - now)
             try:
-                await self._maybe_trade()
+                # Evaluate at the scheduled instant, not the wake-up time: if the loop
+                # wakes late the sample still maps to row t = k - window_start, and one
+                # second never yields two samples.
+                await self._maybe_trade(now_s=target)
             except Exception:
                 logger.exception("sample evaluation failed")
 
-    async def _maybe_trade(self) -> None:
+    async def _maybe_trade(self, *, now_s: float | None = None) -> None:
         if self._traded_slug == self.snap.slug:
             return
-        decision = evaluate(self.snap, self.cfg, now_s=time.time())
+        decision = evaluate(self.snap, self.cfg, now_s=time.time() if now_s is None else now_s)
         self._last_decision = decision
         if not decision.ok or decision.side is None:
             return

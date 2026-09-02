@@ -100,11 +100,12 @@ class BinanceFuturesStream:
         if self._ws is not None:
             return
         self._stop.clear()
+        # No idle watchdog here: the futures socket is blocked on some networks and
+        # the REST poll below already covers it; a watchdog would reconnect forever.
         self._ws = ReconnectingWebSocket(
             name="binance-futures",
             url=BINANCE_FUTURES_URL,
             on_message=self._handle_message,
-            idle_timeout_s=IDLE_TIMEOUT_S,
         )
         self._ws.start()
         self._poll_task = asyncio.create_task(

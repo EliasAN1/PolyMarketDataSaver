@@ -58,7 +58,13 @@ The car cannot show the full dashboard (Google does not allow a WebView on Auto)
 1. **Alerts** — fills and results appear as Auto messages (style A: Bought UP / UP won).
 2. **Centionaire app in Auto** — a two-line status screen (live state + last alert). Open it from the Auto app list after the phone is connected.
 
-Needs the same Tailscale + phone app running. Sideloaded APKs show up once the phone is plugged in / wireless Auto is connected. If the car list is empty, open **Android Auto** on the phone → **Customize launcher** and enable **Centionaire**.
+Needs the same Tailscale + phone app running. Sideloaded APKs are hidden until Android Auto allows unknown sources:
+
+1. Uninstall the old Centionaire, install this APK, open it once.
+2. Phone **Settings → Connected devices → Android Auto** (or search “Android Auto”).
+3. Scroll to the bottom, tap **Version** about 10 times until developer settings unlock.
+4. Overflow menu → **Developer settings** → enable **Unknown sources**.
+5. Disconnect and reconnect the car, then **Customize launcher** and enable **Centionaire**.
 
 ## If the page is blank
 

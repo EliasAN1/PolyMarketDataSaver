@@ -13,6 +13,7 @@ from pmtrader.streams.base import ReconnectingWebSocket
 logger = logging.getLogger(__name__)
 
 COINBASE_WS_URL = "wss://advanced-trade-ws.coinbase.com"
+IDLE_TIMEOUT_S = 30.0
 
 PriceTickCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -43,6 +44,7 @@ class CoinbaseSpotStream:
             url=COINBASE_WS_URL,
             on_message=self._handle_message,
             subscribe=subscribe,
+            idle_timeout_s=IDLE_TIMEOUT_S,
         )
         self._ws.start()
 

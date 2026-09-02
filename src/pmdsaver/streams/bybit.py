@@ -13,6 +13,7 @@ from pmdsaver.streams.base import ReconnectingWebSocket
 logger = logging.getLogger(__name__)
 
 BYBIT_SPOT_URL = "wss://stream.bybit.com/v5/public/spot"
+IDLE_TIMEOUT_S = 30.0
 
 PriceTickCallback = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -37,6 +38,7 @@ class BybitSpotStream:
             url=BYBIT_SPOT_URL,
             on_message=self._handle_message,
             subscribe=subscribe,
+            idle_timeout_s=IDLE_TIMEOUT_S,
         )
         self._ws.start()
 

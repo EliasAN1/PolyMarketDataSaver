@@ -23,6 +23,8 @@ BINANCE_SPOT_URL = (
 BINANCE_FUTURES_URL = "wss://fstream.binance.com/ws/btcusdt@aggTrade"
 BINANCE_FUTURES_REST = "https://fapi.binance.com/fapi/v1/ticker/price"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
+# BTC trade streams tick many times per second; 30s of silence means a dead socket.
+IDLE_TIMEOUT_S = 30.0
 
 
 async def fetch_spot_open_at(open_time_s: int) -> str | None:
@@ -69,6 +71,7 @@ class BinanceSpotStream:
             name="binance-spot",
             url=BINANCE_SPOT_URL,
             on_message=self._handle_message,
+            idle_timeout_s=IDLE_TIMEOUT_S,
         )
         self._ws.start()
 
@@ -127,6 +130,7 @@ class BinanceFuturesStream:
             name="binance-futures",
             url=BINANCE_FUTURES_URL,
             on_message=self._handle_message,
+            idle_timeout_s=IDLE_TIMEOUT_S,
         )
         self._ws.start()
         self._poll_task = asyncio.create_task(

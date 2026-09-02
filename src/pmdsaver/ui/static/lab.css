@@ -181,6 +181,29 @@
   margin-top: 0.1rem;
 }
 
+.lab-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.45rem 0 0.3rem;
+}
+
+.lab-filter-select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0.2rem 0.35rem;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.lab-filter-select:disabled {
+  opacity: 0.35;
+}
+
 .lab-filter-range {
   width: 100%;
 }

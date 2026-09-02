@@ -3,15 +3,19 @@
 Tick replay (iter_snapshots) never changes for a closed window, only the
 strategy variables do. So we sample every window once into a dense
 1-second-resolution tape and cache it in a separate SQLite file
-(data/lab_cache_v2.db). The Strategy Lab frontend then re-evaluates the combo
+(data/lab_cache_v3.db). The Strategy Lab frontend then re-evaluates the combo
 strategy against that tape entirely in the browser, so changing a variable
 never touches SQLite again.
 
 Row layout (index = elapsed seconds into the window, 0..duration):
     [up_ask, down_ask, up_mid, down_mid, btc_minus_ptb, twap_minus_ptb,
-     volume, venues_up, venues_down]
-Missing ticks are forward-filled from the last known state; seconds before
-the first book snapshot stay null (no possible entry there anyway).
+     volume, venues_up, venues_down,
+     binance_minus_ptb, coinbase_minus_ptb, bybit_minus_ptb]
+btc_minus_ptb (index 4) is the median of the three spot venues; indices 9-11
+carry each venue on its own so the browser can pick the BTC reference without
+rescanning. Missing ticks are forward-filled from the last known state;
+seconds before the first book snapshot stay null (no possible entry there
+anyway).
 """
 
 from __future__ import annotations
@@ -33,7 +37,8 @@ from pmdsaver.backtest.replay import (
 )
 from pmdsaver.runtime import data_dir
 
-CACHE_FILE_NAME = "lab_cache_v2.db"
+CACHE_FILE_NAME = "lab_cache_v3.db"
+ROW_WIDTH = 12
 ROUND_PRICE = 4
 ROUND_DIST = 3
 ROUND_VOLUME = 3
@@ -85,22 +90,26 @@ def sample_window_rows(conn: sqlite3.Connection, tape: WindowTape) -> list[list[
     ptb = float(tape.ptb)
     n = duration + 1
     rows: list[list[Any] | None] = [None] * n
-    current: list[Any] = [None] * 9
+    current: list[Any] = [None] * ROW_WIDTH
     last_idx = -1
 
+    def minus_ptb(price: float | None) -> float | None:
+        return None if price is None else _r(price - ptb, ROUND_DIST)
+
     def row_from(snap: Snapshot) -> list[Any]:
-        btc_minus = None if snap.btc is None else snap.btc - ptb
-        twap_minus = None if snap.twap is None else snap.twap - ptb
         return [
             _r(snap.up_ask, ROUND_PRICE),
             _r(snap.down_ask, ROUND_PRICE),
             _r(snap.up_mid, ROUND_PRICE),
             _r(snap.down_mid, ROUND_PRICE),
-            _r(btc_minus, ROUND_DIST),
-            _r(twap_minus, ROUND_DIST),
+            minus_ptb(snap.btc),
+            minus_ptb(snap.twap),
             _r(snap.volume_base, ROUND_VOLUME),
             snap.venues_on_side("up"),
             snap.venues_on_side("down"),
+            minus_ptb(snap.binance_spot),
+            minus_ptb(snap.coinbase_spot),
+            minus_ptb(snap.bybit_spot),
         ]
 
     for snap in iter_snapshots(conn, tape):

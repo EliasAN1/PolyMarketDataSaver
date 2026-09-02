@@ -122,6 +122,8 @@ Replay closed 5m windows from SQLite. One entry per window, hold to expiry (winn
 
 Dashboard: **http://127.0.0.1:8080/backtest**
 
+That page is the **Strategy Lab**: each closed window is sampled once per second into `data/lab_cache_v3.db` and the filters are re-evaluated in the browser. The `|BTC−PTB|` filter's BTC reference is selectable and defaults to **Binance spot** (Coinbase, Bybit, or the median of the three are the alternatives); the live trader's `btc_source` mirrors it. The cache moved from `lab_cache_v2.db` to `lab_cache_v3.db`, so the first Lab open after upgrading rescans all windows.
+
 ```bash
 python -m pmdsaver.backtest --strategy hit_odds --hit-odds 0.25 --last-minutes 3 --fill ask
 python -m pmdsaver.backtest --strategy hit_odds --hit-odds 0.75 --last-minutes 3 --fill ask

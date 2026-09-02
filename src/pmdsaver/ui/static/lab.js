@@ -69,7 +69,7 @@ const state = {
 const FILTER_PAIRS = [
   { toggle: "useLastMinutes", extras: ["elapsedFromRange", "elapsedFromNum", "elapsedToRange", "elapsedToNum"], filter: "filterLastMinutes" },
   { toggle: "useOdds", extras: ["oddsLoRange", "oddsLoNum", "oddsHiRange", "oddsHiNum"], filter: "filterOdds" },
-  { toggle: "useSpot", extras: ["minDistanceRange", "minDistanceNum", "maxDistanceRange", "maxDistanceNum"], filter: "filterSpot" },
+  { toggle: "useSpot", extras: ["minDistanceRange", "minDistanceNum", "maxDistanceRange", "maxDistanceNum", "btcSource"], filter: "filterSpot" },
   { toggle: "useTwap", range: null, numInput: null, filter: "filterTwap" },
   { toggle: "useVolume", range: "minVolumeRange", numInput: "minVolumeNum", filter: "filterVolume" },
   { toggle: "useVenues", range: "minVenuesRange", numInput: "minVenuesNum", filter: "filterVenues" },
@@ -154,6 +154,18 @@ function wireFilters() {
     $(id).addEventListener("input", scheduleRecompute);
   }
   $("fillMode").addEventListener("change", scheduleRecompute);
+  $("btcSource").addEventListener("change", scheduleRecompute);
+}
+
+const BTC_SOURCE_LABELS = {
+  binance_spot: "Binance",
+  coinbase_spot: "Coinbase",
+  bybit_spot: "Bybit",
+  median: "median of 3",
+};
+
+function btcSourceLabel(source) {
+  return BTC_SOURCE_LABELS[source] || BTC_SOURCE_LABELS[LabEngine.DEFAULT_BTC_SOURCE];
 }
 
 /* ------------------------------------------------------------------ *
@@ -174,6 +186,7 @@ function getParams() {
     useSpot: $("useSpot").checked,
     minDistance: num("minDistanceNum", 5),
     maxDistance: num("maxDistanceNum", 10),
+    btcSource: $("btcSource").value,
     useTwap: $("useTwap").checked,
     useVolume: $("useVolume").checked,
     minVolume: num("minVolumeNum", 50),
@@ -204,6 +217,7 @@ function setParams(params) {
     }
   }
   if (params.fillMode) $("fillMode").value = params.fillMode;
+  if (params.btcSource) $("btcSource").value = params.btcSource;
   const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues"];
   for (const t of toggles) {
     if (params[t] != null) $(t).checked = params[t];
@@ -734,7 +748,7 @@ function onSweepClick(event) {
  * ------------------------------------------------------------------ */
 
 function initWorker() {
-  state.worker = new Worker("/static/lab_worker.js?v=4");
+  state.worker = new Worker("/static/lab_worker.js?v=5");
   state.worker.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === "loaded") {
@@ -798,7 +812,7 @@ function describeParams(params) {
   if (params.useOdds) parts.push(`odds ${Number(params.oddsLo).toFixed(2)}–${Number(params.oddsHi).toFixed(2)}`);
   if (params.useSpot) {
     const hi = params.maxDistance == null ? "∞" : Number(params.maxDistance).toFixed(0);
-    parts.push(`|Δ| $${Number(params.minDistance).toFixed(0)}–$${hi}`);
+    parts.push(`|Δ| $${Number(params.minDistance).toFixed(0)}–$${hi} (${btcSourceLabel(params.btcSource)})`);
   }
   if (params.useTwap) parts.push("TWAP agrees");
   if (params.useVolume) parts.push(`vol≥${params.minVolume.toFixed(0)}`);

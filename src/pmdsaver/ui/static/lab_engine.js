@@ -3,7 +3,9 @@
  * (importScripts), so it must stay dependency-free.
  *
  * Row layout (see tape.py): [up_ask, down_ask, up_mid, down_mid,
- * btc_minus_ptb, twap_minus_ptb, volume, venues_up, venues_down]
+ * btc_minus_ptb (median of 3 spot venues), twap_minus_ptb, volume,
+ * venues_up, venues_down, binance_minus_ptb, coinbase_minus_ptb,
+ * bybit_minus_ptb]
  */
 (function (global) {
   "use strict";
@@ -18,7 +20,30 @@
     VOLUME: 6,
     VENUES_UP: 7,
     VENUES_DOWN: 8,
+    BINANCE_MINUS_PTB: 9,
+    COINBASE_MINUS_PTB: 10,
+    BYBIT_MINUS_PTB: 11,
   };
+
+  const BTC_SOURCE_COLUMN = {
+    binance_spot: ROW.BINANCE_MINUS_PTB,
+    coinbase_spot: ROW.COINBASE_MINUS_PTB,
+    bybit_spot: ROW.BYBIT_MINUS_PTB,
+    median: ROW.BTC_MINUS_PTB,
+  };
+  const DEFAULT_BTC_SOURCE = "binance_spot";
+
+  function btcSourceColumn(source) {
+    const col = BTC_SOURCE_COLUMN[source];
+    return col == null ? BTC_SOURCE_COLUMN[DEFAULT_BTC_SOURCE] : col;
+  }
+
+  // Rows written by older tapes are shorter than 12 entries; treat a missing
+  // column as "no price" instead of throwing.
+  function cell(row, idx) {
+    const value = row[idx];
+    return value === undefined ? null : value;
+  }
 
   function clampBand(lo, hi) {
     lo = Math.min(0.99, Math.max(0.01, Number(lo)));
@@ -84,6 +109,7 @@
       params.oddsLo != null ? params.oddsLo : params.hitOdds != null ? params.hitOdds : 0.2,
       params.oddsHi != null ? params.oddsHi : params.hitOdds != null ? params.hitOdds : 0.3,
     );
+    const btcCol = btcSourceColumn(params.btcSource);
     let prevUp = null;
     let prevDown = null;
 
@@ -99,7 +125,7 @@
       const downAsk = row[ROW.DOWN_ASK];
       const upMid = row[ROW.UP_MID];
       const downMid = row[ROW.DOWN_MID];
-      const btcMinusPtb = row[ROW.BTC_MINUS_PTB];
+      const btcMinusPtb = cell(row, btcCol);
       const twapMinusPtb = row[ROW.TWAP_MINUS_PTB];
       const volume = row[ROW.VOLUME];
       const venuesUp = row[ROW.VENUES_UP];
@@ -348,7 +374,18 @@
     });
   }
 
-  const LabEngine = { ROW, evaluate, sweep, findEntry, takerFee, enteredBand, pickEnteredSide, clampBand };
+  const LabEngine = {
+    ROW,
+    DEFAULT_BTC_SOURCE,
+    btcSourceColumn,
+    evaluate,
+    sweep,
+    findEntry,
+    takerFee,
+    enteredBand,
+    pickEnteredSide,
+    clampBand,
+  };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = LabEngine;
   } else {

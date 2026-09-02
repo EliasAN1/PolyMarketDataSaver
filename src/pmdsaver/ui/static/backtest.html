@@ -6,9 +6,9 @@
   <title>BTC 5m · strategy lab</title>
   <link rel="stylesheet" href="/static/app.css?v=4" />
   <link rel="stylesheet" href="/static/backtest.css?v=5" />
-  <link rel="stylesheet" href="/static/lab.css?v=5" />
-  <script src="/static/lab_engine.js?v=4"></script>
-  <script src="/static/lab.js?v=5" defer></script>
+  <link rel="stylesheet" href="/static/lab.css?v=6" />
+  <script src="/static/lab_engine.js?v=5"></script>
+  <script src="/static/lab.js?v=6" defer></script>
 </head>
 <body>
   <header class="bt-header">
@@ -113,6 +113,15 @@
           </div>
           <input class="lab-filter-range" id="minDistanceRange" type="range" min="0" max="200" step="1" value="5" title="Min $" />
           <input class="lab-filter-range" id="maxDistanceRange" type="range" min="0" max="200" step="1" value="10" title="Max $" />
+          <div class="lab-filter-row">
+            <span class="lab-filter-unit">BTC reference</span>
+            <select class="lab-filter-select" id="btcSource" title="Spot price used as BTC when measuring the distance to the price-to-beat. The live trader uses the same setting (btc_source).">
+              <option value="binance_spot" selected>Binance (USDT)</option>
+              <option value="coinbase_spot">Coinbase (USD)</option>
+              <option value="bybit_spot">Bybit (USDT)</option>
+              <option value="median">Median of 3</option>
+            </select>
+          </div>
           <div class="lab-filter-hint">Absolute dollars from the price-to-beat. 5–10 means between $5 and $10 away. 10–200 is “at least $10” on this slider.</div>
         </div>
 

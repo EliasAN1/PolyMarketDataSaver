@@ -11,12 +11,14 @@ elapsed_to_min = 1.0
 odds_min = 0.1
 odds_max = 0.35
 
-# FAK limit price (separate from trigger). Willing to pay up to this on the buy.
-# Omit to default to odds_max. Set higher than odds_max to improve fill rate after a cross.
-# Example: trigger at 0.35, pay up to 0.40 → fak_limit = 0.40
-fak_limit = 0.7
+# Hard cap on the ask (separate from trigger): the Lab fills at the ask on the sample where the
+# mid enters the band, so allow a few ticks of spread above odds_max; skip when the ask is higher.
+# Omit to default to odds_max. Example: trigger at 0.35, pay up to 0.40 → fak_limit = 0.40
+fak_limit = 0.40
 
 use_btc_distance = true
+# Spot venue that stands in for BTC (Lab "BTC reference"): binance_spot | coinbase_spot | bybit_spot | median
+btc_source = "binance_spot"
 min_btc_away = 0
 max_btc_away = 50
 

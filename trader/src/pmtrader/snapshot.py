@@ -35,11 +35,13 @@ class LiveSnapshot:
     spots: dict[str, float | None] = field(
         default_factory=lambda: {name: None for name in VENUE_SOURCES}
     )
-    # Mid history for Lab-style "enter the odds band" (first in-watch tick is baseline).
+    # Venue whose price stands in for BTC (or "median" of the three spots).
+    btc_source: str = "binance_spot"
+    # Mids of the previous once-per-second sample, for the Lab's "enter the odds
+    # band" test (prev sample outside the band, this sample inside). Null until
+    # the first in-watch sample with a book; nothing is remembered outside the watch.
     prev_up_mid: float | None = None
     prev_down_mid: float | None = None
-    mid_entered_up: bool = False
-    mid_entered_down: bool = False
     in_watch: bool = False
 
     def reset_window(
@@ -90,6 +92,8 @@ class LiveSnapshot:
 
     @property
     def btc(self) -> float | None:
+        if self.btc_source != "median":
+            return self.spots.get(self.btc_source)
         values = [p for name in SPOT_SOURCES if (p := self.spots.get(name)) is not None]
         if not values:
             return None
@@ -140,8 +144,6 @@ class LiveSnapshot:
     def clear_odds_memory(self) -> None:
         self.prev_up_mid = None
         self.prev_down_mid = None
-        self.mid_entered_up = False
-        self.mid_entered_down = False
         self.in_watch = False
 
     def remember_mids(self) -> None:
@@ -151,15 +153,6 @@ class LiveSnapshot:
             self.prev_up_mid = up
         if down is not None:
             self.prev_down_mid = down
-
-    def mid_entered(self, side: str) -> bool:
-        return self.mid_entered_up if side == "up" else self.mid_entered_down
-
-    def mark_mid_entered(self, side: str) -> None:
-        if side == "up":
-            self.mid_entered_up = True
-        else:
-            self.mid_entered_down = True
 
     def token_for(self, side: str) -> str:
         return self.up_token_id if side == "up" else self.down_token_id

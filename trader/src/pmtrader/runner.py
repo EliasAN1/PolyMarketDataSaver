@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import sys
 import time
 from dataclasses import dataclass, field
@@ -36,6 +37,9 @@ ROLLOVER_LEAD_SECONDS = 30
 MARKET_POLL_SECONDS = 0.25
 SETTLE_SECONDS = 3
 RESOLVE_AFTER_SECONDS = 3
+# Lab tape row t holds the state just before elapsed t + 0.5; sampling at k + 0.45
+# reproduces row t = k - window_start.
+SAMPLE_OFFSET_S = 0.45
 
 
 @dataclass
@@ -54,6 +58,7 @@ class Trader:
     _last_decision: Decision | None = None
 
     def __post_init__(self) -> None:
+        self.snap.btc_source = self.cfg.btc_source
         self.rtds = RtdsTwapStream(on_tick=self._on_twap, on_ptb_captured=self._on_ptb)
         self.clob = ClobOddsStream(on_tick=self._on_odds)
         self.binance_spot = BinanceSpotStream(on_price_tick=self._on_price)
@@ -81,6 +86,7 @@ class Trader:
         self.bybit.start()
         self._tasks = [
             asyncio.create_task(self._window_loop(), name="window-loop"),
+            asyncio.create_task(self._sample_loop(), name="sample-loop"),
             asyncio.create_task(self._status_loop(), name="status-loop"),
             asyncio.create_task(self._settle_loop(), name="settle-loop"),
         ]
@@ -208,15 +214,25 @@ class Trader:
 
     async def _on_odds(self, tick: dict) -> None:
         self.snap.apply_odds(tick)
-        await self._maybe_trade()
 
     async def _on_price(self, tick: dict) -> None:
         self.snap.apply_price(tick)
-        await self._maybe_trade()
 
     async def _on_twap(self, tick: dict) -> None:
         self.snap.apply_twap(tick)
-        await self._maybe_trade()
+
+    async def _sample_loop(self) -> None:
+        """Evaluate once per second at the Lab's tape boundary, not on every tick."""
+        while not self._stop.is_set():
+            now = time.time()
+            target = math.floor(now) + SAMPLE_OFFSET_S
+            if target <= now:
+                target += 1.0
+            await asyncio.sleep(target - now)
+            try:
+                await self._maybe_trade()
+            except Exception:
+                logger.exception("sample evaluation failed")
 
     async def _maybe_trade(self) -> None:
         if self._traded_slug == self.snap.slug:

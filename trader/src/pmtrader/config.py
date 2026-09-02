@@ -7,10 +7,16 @@ import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+BTC_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot", "median")
+
 
 @dataclass(slots=True)
 class TraderConfig:
     """Entry rules aligned with Strategy Lab (elapsed band, odds enter, |BTC−PTB| band).
+
+    Entries are sampled once per second on the Lab's tape boundary and mirror
+    ``findEntry`` in lab_engine.js: same-sample band cross, fill at the ask.
+    ``fak_limit`` is a hard cap on that ask (skip when the ask is above it).
 
     Older keys still work: ``use_entry_last`` + ``entry_last_minutes`` if
     ``elapsed_from_min`` / ``elapsed_to_min`` are omitted.
@@ -26,6 +32,7 @@ class TraderConfig:
     use_btc_distance: bool = False
     min_btc_away: float = 5.0
     max_btc_away: float | None = None
+    btc_source: str = "binance_spot"
     use_twap: bool = False
     use_venues: bool = False
     min_venues: int = 2
@@ -45,6 +52,8 @@ class TraderConfig:
             raise ValueError("stake_usd must be positive")
         if self.min_venues < 1:
             raise ValueError("min_venues must be >= 1")
+        if self.btc_source not in BTC_SOURCES:
+            raise ValueError(f"btc_source must be one of {', '.join(BTC_SOURCES)}; got {self.btc_source!r}")
         if self.min_btc_away < 0:
             raise ValueError("min_btc_away must be >= 0")
         if self.max_btc_away is not None:
@@ -86,13 +95,7 @@ class TraderConfig:
         return f"{lo:.2f}-{hi:.2f}"
 
     def fillable_ask_label(self) -> str:
-        lo, hi = self.odds_min, self.odds_max
-        cap = self.effective_fak_limit()
-        if lo < hi:
-            return f"{lo:.2f}-{cap:.2f}"
-        if lo < 0.5:
-            return f"<= {cap:.2f}"
-        return f"{lo:.2f}-{cap:.2f}"
+        return f"<= {self.effective_fak_limit():.2f}"
 
 
 def load_config(path: Path) -> TraderConfig:

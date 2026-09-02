@@ -7,7 +7,10 @@ from typing import Any
 
 from pmtrader.config import TraderConfig
 from pmtrader.snapshot import LiveSnapshot
-from pmtrader.strategy import _ask_fillable, evaluate
+from pmtrader.strategy import Decision, _ask_fillable
+
+# Skip reasons raised after the odds-band test passed on the last sample.
+_PAST_BAND_REASONS = frozenset({"ok", "no_twap", "twap_disagree", "venues", "no_ask", "ask_above_cap"})
 
 
 def live_payload(trader: Any | None) -> dict[str, Any]:
@@ -17,7 +20,9 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
     snap: LiveSnapshot = trader.snap
     cfg: TraderConfig = trader.cfg
     now = time.time()
-    decision = evaluate(snap, cfg, now_s=now)
+    # The runner samples once per second and owns the band memory; re-running
+    # evaluate() here would mutate it from the UI thread.
+    decision: Decision | None = trader._last_decision
     traded = trader._traded_slug == snap.slug
     left = (snap.window_end - now) if snap.window_end else None
     btc_delta = snap.btc_minus_ptb()
@@ -26,6 +31,8 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
 
     if traded:
         state = "sent"
+    elif decision is None:
+        state = "waiting"
     elif decision.ok:
         state = "ready"
     else:
@@ -38,7 +45,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "seconds_left": max(0, int(left)) if left is not None else None,
         "elapsed_s": max(0, int(now - snap.window_start)) if snap.window_start else None,
         "state": state,
-        "side": decision.side or side,
+        "side": (decision.side if decision is not None else None) or side,
         "traded": traded,
         "ptb": snap.ptb,
         "btc": snap.btc,
@@ -65,6 +72,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "min_seconds_left": cfg.min_seconds_left,
             "min_btc_away": cfg.min_btc_away,
             "max_btc_away": cfg.max_btc_away,
+            "btc_source": cfg.btc_source,
             "use_btc_distance": cfg.use_btc_distance,
             "use_twap": cfg.use_twap,
             "use_venues": cfg.use_venues,
@@ -73,7 +81,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,
         },
-        "checks": _checks(snap, cfg, now_s=now, traded=traded, side=side),
+        "checks": _checks(snap, cfg, now_s=now, traded=traded, side=side, decision=decision),
     }
 
 
@@ -98,6 +106,7 @@ def _checks(
     now_s: float,
     traded: bool,
     side: str | None,
+    decision: Decision | None,
 ) -> list[dict[str, Any]]:
     left = (snap.window_end - now_s) if snap.window_end else None
     elapsed = (now_s - snap.window_start) if snap.window_start else None
@@ -118,7 +127,7 @@ def _checks(
     ask = snap.ask_for(side) if side else None
     mid = snap.mid_for(side) if side else None
     in_ask_band = ask is not None and _ask_fillable(ask, cfg)
-    crossed = bool(side and snap.mid_entered(side))
+    crossed = decision is not None and decision.reason in _PAST_BAND_REASONS
     twap_delta = snap.twap_minus_ptb()
     twap_ok = (
         not cfg.use_twap

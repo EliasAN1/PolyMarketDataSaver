@@ -55,6 +55,7 @@ def entry_record(
         row["error"] = result.error
     btc_delta = snap.btc_minus_ptb()
     row["btc_minus_ptb"] = round(btc_delta, 2) if btc_delta is not None else None
+    row["btc_source"] = snap.btc_source
     row["spot_deltas"] = snap.spot_deltas()
     return row
 

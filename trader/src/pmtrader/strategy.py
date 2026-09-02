@@ -1,4 +1,10 @@
-"""Combo entry filters aligned with Strategy Lab."""
+"""Combo entry filters: a per-sample port of Strategy Lab's ``findEntry``.
+
+``evaluate`` is called once per second (see ``Trader._sample_loop``); each call
+is one tape row ``t`` of lab_engine.js. The side must *enter* the odds band on
+this very sample (previous sample outside, this one inside), every enabled
+filter must agree on the same sample, and the fill is this sample's ask.
+"""
 
 from __future__ import annotations
 
@@ -23,81 +29,71 @@ class Decision:
 
 
 def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision:
-    limit = cfg.effective_fak_limit()
+    cap = cfg.effective_fak_limit()
     if snap.window_end <= 0 or snap.window_start <= 0:
         snap.clear_odds_memory()
-        return Decision(None, "no_window", None, limit)
+        return Decision(None, "no_window", None, cap)
 
     duration = max(1.0, float(snap.window_end - snap.window_start))
-    elapsed = now_s - snap.window_start
-    seconds_left = snap.window_end - now_s
-    armed, from_s, to_s = cfg.watch_span_s(duration)
-    in_watch = (not armed) or (from_s <= elapsed <= to_s)
-
-    if seconds_left < cfg.min_seconds_left:
+    t = round(now_s - snap.window_start)
+    _, from_s, to_s = cfg.watch_span_s(duration)
+    if snap.window_end - now_s < cfg.min_seconds_left:
         snap.clear_odds_memory()
-        return Decision(None, "too_late", None, limit)
-    if not in_watch:
+        return Decision(None, "too_late", None, cap)
+    if not round(from_s) <= t <= round(to_s):
         snap.clear_odds_memory()
-        return Decision(None, "outside_elapsed", None, limit)
+        return Decision(None, "outside_elapsed", None, cap)
 
     if not snap.in_watch:
         snap.clear_odds_memory()
         snap.in_watch = True
 
-    if snap.ptb is None:
+    def skip(reason: str, ask: float | None = None) -> Decision:
         snap.remember_mids()
-        return Decision(None, "no_ptb", None, limit)
+        return Decision(None, reason, ask, cap)
+
+    if snap.ptb is None:
+        return skip("no_ptb")
 
     lo, hi = cfg.odds_min, cfg.odds_max
-    side: Side | None
+    up = snap.mid_for("up")
+    down = snap.mid_for("down")
+    side: Side
     if cfg.use_btc_distance:
         delta = snap.btc_minus_ptb()
         if delta is None:
-            snap.remember_mids()
-            return Decision(None, "no_btc", None, limit)
+            return skip("no_btc")
         if not _distance_ok(abs(delta), cfg):
-            snap.remember_mids()
-            return Decision(None, "btc_out", None, limit)
+            return skip("btc_out")
         side = "up" if delta > 0 else "down"
-        _note_mid_enter(snap, side, lo, hi)
-        if not snap.mid_entered(side):
-            snap.remember_mids()
-            return Decision(None, "odds_out", snap.ask_for(side), limit)
+        curr = up if side == "up" else down
+        prev = snap.prev_up_mid if side == "up" else snap.prev_down_mid
+        if not _entered_band(prev, curr, lo, hi):
+            return skip("odds_out", snap.ask_for(side))
     else:
-        side = _pick_entered_side(snap, lo, hi)
-        if side is None:
-            snap.remember_mids()
-            ask = snap.up_ask if snap.up_ask is not None else snap.down_ask
-            return Decision(None, "odds_out", ask, limit)
+        picked = _pick_entered_side(snap.prev_up_mid, up, snap.prev_down_mid, down, lo, hi)
+        if picked is None:
+            return skip("odds_out", snap.up_ask if snap.up_ask is not None else snap.down_ask)
+        side = picked
 
     ask = snap.ask_for(side)
-    if ask is None:
-        snap.remember_mids()
-        return Decision(None, "no_ask", None, limit)
-    if not _ask_fillable(ask, cfg):
-        snap.remember_mids()
-        return Decision(None, "ask_above_cap", ask, limit)
-
     if cfg.use_twap:
         twap_delta = snap.twap_minus_ptb()
         if twap_delta is None:
-            snap.remember_mids()
-            return Decision(None, "no_twap", ask, limit)
-        if side == "up" and not (twap_delta > 0):
-            snap.remember_mids()
-            return Decision(None, "twap_disagree", ask, limit)
-        if side == "down" and not (twap_delta < 0):
-            snap.remember_mids()
-            return Decision(None, "twap_disagree", ask, limit)
+            return skip("no_twap", ask)
+        if not (twap_delta > 0 if side == "up" else twap_delta < 0):
+            return skip("twap_disagree", ask)
+    if cfg.use_venues and snap.venues_on_side(side) < cfg.min_venues:
+        return skip("venues", ask)
 
-    if cfg.use_venues:
-        venues = snap.venues_on_side(side)
-        if venues < cfg.min_venues:
-            snap.remember_mids()
-            return Decision(None, "venues", ask, limit)
+    if ask is None or not 0 < ask < 1:
+        return skip("no_ask", ask)
+    if ask > cap:
+        return skip("ask_above_cap", ask)
 
     snap.remember_mids()
+    # Marketable FAK: one tick above the observed ask, never above the cap.
+    limit = min(ask + float(cfg.tick_size), cap)
     return Decision(side, "ok", ask, limit)
 
 
@@ -123,38 +119,28 @@ def _entered_band(prev: float | None, curr: float | None, lo: float, hi: float) 
     return (prev < lo <= curr) or (prev > lo >= curr)
 
 
-def _note_mid_enter(snap: LiveSnapshot, side: Side, lo: float, hi: float) -> None:
-    curr = snap.mid_for(side)
-    prev = snap.prev_up_mid if side == "up" else snap.prev_down_mid
-    if _entered_band(prev, curr, lo, hi):
-        snap.mark_mid_entered(side)
-
-
-def _pick_entered_side(snap: LiveSnapshot, lo: float, hi: float) -> Side | None:
-    _note_mid_enter(snap, "up", lo, hi)
-    _note_mid_enter(snap, "down", lo, hi)
-    up_hit = snap.mid_entered("up")
-    down_hit = snap.mid_entered("down")
-    if up_hit and down_hit:
+def _pick_entered_side(
+    prev_up: float | None,
+    up: float | None,
+    prev_down: float | None,
+    down: float | None,
+    lo: float,
+    hi: float,
+) -> Side | None:
+    up_in = _entered_band(prev_up, up, lo, hi)
+    down_in = _entered_band(prev_down, down, lo, hi)
+    if up_in and down_in:
         mid = (lo + hi) / 2
-        up = snap.mid_for("up")
-        down = snap.mid_for("down")
         up_dist = abs((up if up is not None else mid) - mid)
         down_dist = abs((down if down is not None else mid) - mid)
         return "up" if up_dist <= down_dist else "down"
-    if up_hit:
+    if up_in:
         return "up"
-    if down_hit:
+    if down_in:
         return "down"
     return None
 
 
 def _ask_fillable(ask: float, cfg: TraderConfig) -> bool:
-    """Ask must be fillable at or below the FAK cap (may exceed trigger band)."""
-    lo, hi = cfg.odds_min, cfg.odds_max
-    cap = cfg.effective_fak_limit()
-    if lo < hi:
-        return lo <= ask <= cap
-    if lo < 0.5:
-        return ask <= cap
-    return lo <= ask <= cap
+    """A live FAK needs a real ask at or below the cap; the Lab only needs 0 < ask < 1."""
+    return 0 < ask < 1 and ask <= cfg.effective_fak_limit()

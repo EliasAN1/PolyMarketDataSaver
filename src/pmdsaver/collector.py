@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pmdsaver.clock import WINDOW_SECONDS, Window, current_window, next_window, window_from_slug, window_from_start
 from pmdsaver.db import Database, WindowRow
 from pmdsaver.gamma import GammaClient, MarketInfo, extract_final_price, extract_price_to_beat, extract_resolved_outcome
+from pmdsaver.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmdsaver.live_hub import HUB, LiveHub
 from pmdsaver.streams.binance import BinanceFuturesStream, BinanceSpotStream, fetch_spot_open_at
 from pmdsaver.streams.bybit import BybitSpotStream
@@ -263,17 +264,19 @@ class Collector:
         return None, None
 
     async def _try_settle_window(self, window: Window) -> bool:
+        outcome, source = await self._resolve_outcome(window)
         event = await self.gamma.fetch_event(window, missing_ok=True)
-        if event is None:
-            return False
-        gamma_ptb = extract_price_to_beat(event)
-        final = extract_final_price(event)
-        outcome = extract_resolved_outcome(event)
+        gamma_ptb = extract_price_to_beat(event) if event else None
+        final = extract_final_price(event) if event else None
         if gamma_ptb is not None:
             await self.db.update_window_price_to_beat(
                 window.slug,
                 price_to_beat_gamma=gamma_ptb,
             )
+        if outcome is None and event is not None:
+            outcome = extract_resolved_outcome(event)
+            if outcome is not None:
+                source = "gamma"
         if outcome is None:
             return False
         await self.db.set_window_settlement(
@@ -281,16 +284,58 @@ class Collector:
             final_price=final,
             outcome=outcome,
             price_to_beat_gamma=gamma_ptb,
-            outcome_source="polymarket",
+            outcome_source=source or "clob",
         )
         logger.info(
-            "Settled %s outcome=%s final=%s ptb=%s source=polymarket",
+            "Settled %s outcome=%s final=%s ptb=%s source=%s",
             window.slug,
             outcome,
             final or "-",
             gamma_ptb or "-",
+            source or "clob",
         )
         return True
+
+    async def _resolve_outcome(self, window: Window) -> tuple[str | None, str]:
+        """Same order as the live trader: live CLOB book, CLOB REST, then ticks."""
+        if self.current.slug == window.slug:
+            tick = self.clob.state.snapshot("settle")
+            if tick is not None:
+                outcome = infer_outcome_from_clob(
+                    up_mid=_to_float(tick.get("up_mid")),
+                    down_mid=_to_float(tick.get("down_mid")),
+                    up_ask=_to_float(tick.get("up_ask")),
+                    down_ask=_to_float(tick.get("down_ask")),
+                    up_bid=_to_float(tick.get("up_bid")),
+                    down_bid=_to_float(tick.get("down_bid")),
+                )
+                if outcome is not None:
+                    return outcome, "clob_live"
+
+        info = await self.db.load_window_settle(window.slug)
+        up_token = ""
+        down_token = ""
+        if self.current_market is not None and self.current.slug == window.slug:
+            up_token = self.current_market.up_token_id
+            down_token = self.current_market.down_token_id
+        elif info is not None:
+            up_token = info["up_token_id"]
+            down_token = info["down_token_id"]
+        if up_token and down_token:
+            odds = await fetch_clob_odds(
+                self.clob._http,
+                up_token_id=up_token,
+                down_token_id=down_token,
+            )
+            outcome = infer_outcome_from_clob(**odds)
+            if outcome is not None:
+                return outcome, "clob_rest"
+
+        if info is not None:
+            outcome = await self.db.infer_clob_outcome(info["id"], info["window_end"])
+            if outcome is not None:
+                return outcome, "clob"
+        return None, ""
 
     async def _reconcile_unsettled(self) -> None:
         slugs = await self.db.list_unsettled_slugs(
@@ -465,3 +510,12 @@ class Collector:
                 self._window_id(),
             )
         )
+
+
+def _to_float(value: object | None) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

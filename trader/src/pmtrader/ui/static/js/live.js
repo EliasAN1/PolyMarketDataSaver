@@ -29,20 +29,37 @@ const ICONS = {
   grid: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>',
 };
 
+const VENUE_LABELS = {
+  binance_spot: "Binance",
+  coinbase_spot: "Coinbase",
+  bybit_spot: "Bybit",
+  median: "Median",
+};
+
+function venueLabel(source) {
+  return VENUE_LABELS[source] || "Binance";
+}
+
 const SKIP_STATUS = {
-  outside_elapsed: { label: "Wait", icon: "clock", hint: "Outside watch window" },
+  outside_when: { label: "When", icon: "clock", hint: "Outside selected hours / days / markets" },
   too_late: { label: "Late", icon: "clock", hint: "Too late to enter" },
   no_window: { label: "Idle", icon: "pause", hint: "No live window" },
   no_ptb: { label: "PTB", icon: "target", hint: "No price to beat" },
-  no_btc: { label: "BTC", icon: "trend", hint: "No BTC feed" },
-  btc_out: { label: "Range", icon: "trend", hint: "BTC distance out of range" },
+  no_btc: { label: "Binance", icon: "trend", hint: "No Binance feed" },
+  btc_out: { label: "Range", icon: "trend", hint: "Binance distance out of range" },
   odds_out: { label: "Odds", icon: "percent", hint: "Odds outside trigger band" },
   no_ask: { label: "Book", icon: "layers", hint: "No ask on the book" },
   ask_above_cap: { label: "Cap", icon: "shield", hint: "Ask above FAK cap" },
   no_twap: { label: "TWAP", icon: "pulse", hint: "No TWAP yet" },
-  twap_disagree: { label: "TWAP", icon: "pulse", hint: "TWAP disagrees with side" },
+  twap_disagree: { label: "TWAP", icon: "pulse", hint: "TWAP disagrees with Binance" },
   venues: { label: "Venues", icon: "grid", hint: "Not enough venues" },
 };
+
+function setBadge(el, text, cls) {
+  if (!el) return;
+  el.textContent = text;
+  el.className = `pillar-badge ${cls || ""}`.trim();
+}
 
 function setStateTag(el, { cls, label, icon, hint }) {
   if (!el) return;
@@ -69,7 +86,158 @@ function fmtOdds(val) {
   return Number(val).toFixed(2);
 }
 
+const WEEKDAY_CHIPS = [
+  { key: 1, label: "Mon" },
+  { key: 2, label: "Tue" },
+  { key: 3, label: "Wed" },
+  { key: 4, label: "Thu" },
+  { key: 5, label: "Fri" },
+  { key: 6, label: "Sat" },
+  { key: 0, label: "Sun" },
+];
+
+function defaultSessions() {
+  return [
+    { key: "tokyo_open", short: "Tokyo", label: "Tokyo open" },
+    { key: "london_open", short: "Lon open", label: "London open" },
+    { key: "wall_open", short: "NY open", label: "Wall St open" },
+    { key: "asia", short: "Asia", label: "Asia" },
+    { key: "london", short: "London", label: "London" },
+    { key: "wall", short: "Wall St", label: "Wall Street" },
+    { key: "overlap", short: "Overlap", label: "London–NY" },
+    { key: "off", short: "Off", label: "Off hours" },
+  ];
+}
+
+const whenUi = {
+  hours: [],
+  weekdays: [],
+  sessions: [],
+  wired: false,
+  sig: "",
+};
+
+function weekdayKey(value) {
+  if (typeof value === "number") return value;
+  const i = WEEKDAY_CHIPS.findIndex((d) => d.label.toLowerCase() === String(value).slice(0, 3).toLowerCase());
+  return i >= 0 ? WEEKDAY_CHIPS[i].key : Number(value);
+}
+
+function readWhen(data) {
+  const src = data?.when || data?.config || {};
+  return {
+    hours: (src.hours || []).map(Number),
+    weekdays: (src.weekdays || []).map(weekdayKey),
+    sessions: (src.sessions || []).map(String),
+    label: src.label || "All hours",
+    ok: src.ok !== false,
+    catalog: src.catalog || defaultSessions(),
+  };
+}
+
+function toggleList(selected, key, allKeys) {
+  const asStr = (v) => String(v);
+  if (!selected.length) return [key];
+  const has = selected.some((item) => asStr(item) === asStr(key));
+  const next = has ? selected.filter((item) => asStr(item) !== asStr(key)) : [...selected, key];
+  if (!next.length || next.length === allKeys.length) return [];
+  return next;
+}
+
+async function postWhen(hours, weekdays, sessions) {
+  whenUi.hours = hours;
+  whenUi.weekdays = weekdays;
+  whenUi.sessions = sessions;
+  try {
+    await fetch("/api/when", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hours, weekdays, sessions }),
+    });
+  } catch {
+    /* next live poll restores server state */
+  }
+}
+
+function chipClass(on) {
+  return `when-chip${on ? " is-on" : ""}`;
+}
+
+function renderWhenPanel(data, root) {
+  const panel = root.getElementById("when-panel");
+  if (!panel) return;
+  const w = readWhen(data);
+  whenUi.hours = w.hours;
+  whenUi.weekdays = w.weekdays;
+  whenUi.sessions = w.sessions;
+
+  const meta = root.getElementById("when-meta");
+  const reset = root.getElementById("when-reset-all");
+  const active = w.hours.length || w.weekdays.length || w.sessions.length;
+  if (meta) meta.textContent = active ? w.label : "All hours · click to filter";
+  if (reset) reset.hidden = !active;
+
+  const sig = JSON.stringify([w.hours, w.weekdays, w.sessions]);
+  const hoursRoot = root.getElementById("when-hours");
+  if (sig === whenUi.sig && hoursRoot?.childElementCount) {
+    return;
+  }
+  whenUi.sig = sig;
+
+  const hourRoot = root.getElementById("when-hours");
+  if (hourRoot) {
+    hourRoot.innerHTML = Array.from({ length: 24 }, (_, h) => {
+      const on = !w.hours.length || w.hours.includes(h);
+      return `<button type="button" class="${chipClass(on)}" data-when="hours" data-key="${h}">${String(h).padStart(2, "0")}</button>`;
+    }).join("");
+  }
+  const dayRoot = root.getElementById("when-weekdays");
+  if (dayRoot) {
+    dayRoot.innerHTML = WEEKDAY_CHIPS.map((d) => {
+      const on = !w.weekdays.length || w.weekdays.includes(d.key);
+      return `<button type="button" class="${chipClass(on)}" data-when="weekdays" data-key="${d.key}">${d.label}</button>`;
+    }).join("");
+  }
+  const sessRoot = root.getElementById("when-sessions");
+  if (sessRoot) {
+    const catalog = w.catalog.length ? w.catalog : defaultSessions();
+    sessRoot.innerHTML = catalog.map((s) => {
+      const on = !w.sessions.length || w.sessions.includes(s.key);
+      const title = `${s.label || s.short}${s.utc ? ` · ${s.utc}` : ""}${s.local ? ` · ${s.local}` : ""}`;
+      return `<button type="button" class="${chipClass(on)}" data-when="sessions" data-key="${esc(s.key)}" title="${esc(title)}">${esc(s.short || s.label)}</button>`;
+    }).join("");
+  }
+
+  if (!whenUi.wired) {
+    whenUi.wired = true;
+    panel.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-when]");
+      if (!btn || !panel.contains(btn)) return;
+      const kind = btn.dataset.when;
+      const raw = btn.dataset.key;
+      if (kind === "hours") {
+        whenUi.hours = toggleList(whenUi.hours, Number(raw), Array.from({ length: 24 }, (_, i) => i));
+      } else if (kind === "weekdays") {
+        whenUi.weekdays = toggleList(whenUi.weekdays, Number(raw), WEEKDAY_CHIPS.map((d) => d.key));
+      } else if (kind === "sessions") {
+        const keys = (readWhen({ when: whenUi }).catalog || defaultSessions()).map((s) => s.key);
+        const catalog = [...panel.querySelectorAll("#when-sessions [data-key]")].map((el) => el.dataset.key);
+        whenUi.sessions = toggleList(whenUi.sessions, String(raw), catalog.length ? catalog : keys);
+      }
+      postWhen(whenUi.hours, whenUi.weekdays, whenUi.sessions);
+      whenUi.sig = "";
+      renderWhenPanel({ when: { ...whenUi, label: "Updating…", catalog: w.catalog } }, root);
+    });
+    reset?.addEventListener("click", () => {
+      postWhen([], [], []);
+      whenUi.sig = "";
+      renderWhenPanel({ when: { hours: [], weekdays: [], sessions: [], label: "All hours", catalog: w.catalog } }, root);
+    });
+  }
+}
+
 export function renderLive(data, root = document) {
+  renderWhenPanel(data, root);
   const radarTimeLeft = root.getElementById("radar-time-left");
   const radarTimeBadge = root.getElementById("radar-time-badge");
   const radarStateTag = root.getElementById("radar-state-tag");
@@ -115,11 +283,16 @@ export function renderLive(data, root = document) {
     navStatusText = "READY";
   } else if (state.startsWith("skip:")) {
     const reason = state.slice(5);
-    const skip = SKIP_STATUS[reason] || {
+    const skip = { ...(SKIP_STATUS[reason] || {
       label: reason.replaceAll("_", " "),
       icon: "pause",
       hint: reason.replaceAll("_", " "),
-    };
+    }) };
+    if (reason === "no_btc" || reason === "btc_out") {
+      const v = venueLabel(data.config?.btc_source);
+      skip.label = v;
+      skip.hint = reason === "no_btc" ? `No ${v} feed` : `${v} distance out of range`;
+    }
     setStateTag(radarStateTag, { cls: "state-skip", ...skip });
     navStatusText = "WAITING";
     navCls += " is-waiting";
@@ -165,41 +338,40 @@ export function renderLive(data, root = document) {
   const ptbEl = root.getElementById("pillar-ptb-val");
   if (ptbEl) ptbEl.textContent = fmtUsd(data.ptb, 2);
 
-  // 4. Pillar 2: BTC Spot vs PTB
+  // 4. Pillar 2: Binance (or selected venue) vs PTB
+  const venue = venueLabel(data.config?.btc_source);
+  const btcLabelEl = root.getElementById("pillar-btc-label");
   const btcDeltaEl = root.getElementById("pillar-btc-delta");
   const btcSpotEl = root.getElementById("pillar-btc-spot");
   const btcSideBadge = root.getElementById("btc-side-badge");
   const btcSub = root.getElementById("pillar-btc-sub");
 
+  if (btcLabelEl) btcLabelEl.textContent = `${venue} vs PTB`;
   if (btcDeltaEl) {
     btcDeltaEl.textContent = fmtSignedUsd(data.btc_delta, 1);
     btcDeltaEl.className = `pillar-value ${data.btc_delta > 0 ? "up" : data.btc_delta < 0 ? "down" : ""}`;
   }
   if (btcSpotEl) {
-    btcSpotEl.textContent = data.btc != null ? `BTC ${fmtUsd(data.btc, 2)}` : "BTC $—";
+    btcSpotEl.textContent = data.btc != null ? fmtUsd(data.btc, 2) : "$—";
   }
-  if (btcSideBadge) {
-    if (side) {
-      btcSideBadge.textContent = `SIDE ${side.toUpperCase()}`;
-      btcSideBadge.style.color = side === "up" ? "var(--emerald-light)" : "var(--crimson-light)";
-      btcSideBadge.style.borderColor = side === "up" ? "var(--emerald-border)" : "var(--crimson-border)";
-    } else {
-      btcSideBadge.textContent = "SIDE —";
-      btcSideBadge.style.color = "";
-      btcSideBadge.style.borderColor = "";
-    }
+  if (data.btc_delta > 0) {
+    setBadge(btcSideBadge, "UP", "is-up");
+  } else if (data.btc_delta < 0) {
+    setBadge(btcSideBadge, "DOWN", "is-down");
+  } else {
+    setBadge(btcSideBadge, "—", "");
   }
   if (btcSub && data.config) {
     const minD = data.config.min_btc_away;
     const maxD = data.config.max_btc_away;
     if (minD === 0 && maxD != null) {
-      btcSub.textContent = `Target: ≤ $${maxD}`;
+      btcSub.textContent = `≤ $${maxD} from PTB`;
     } else if (minD > 0 && maxD != null) {
-      btcSub.textContent = `Target: $${minD}–$${maxD}`;
+      btcSub.textContent = `$${minD}–$${maxD} from PTB`;
     } else if (minD > 0 && maxD == null) {
-      btcSub.textContent = `Target: ≥ $${minD}`;
+      btcSub.textContent = `≥ $${minD} from PTB`;
     } else {
-      btcSub.textContent = "Window distance";
+      btcSub.textContent = `${venue} minus PTB`;
     }
   }
 
@@ -233,27 +405,35 @@ export function renderLive(data, root = document) {
     oddsBandBadge.textContent = `TRIG ${trigger} · FAK ${Number(fak).toFixed(2)}`;
   }
 
-  // 6. Pillar 4: TWAP & Venues
+  // 6. Pillar 4: TWAP vs PTB
   const twapDeltaEl = root.getElementById("pillar-twap-delta");
   const twapAbsEl = root.getElementById("pillar-twap-abs");
-  const venuesBadge = root.getElementById("venues-count-badge");
+  const twapAgreeBadge = root.getElementById("twap-agree-badge");
+  const twapSub = root.getElementById("pillar-twap-sub");
 
   if (twapDeltaEl) {
     twapDeltaEl.textContent = fmtSignedUsd(data.twap_delta, 1);
     twapDeltaEl.className = `pillar-value ${data.twap_delta > 0 ? "up" : data.twap_delta < 0 ? "down" : ""}`;
   }
   if (twapAbsEl) {
-    twapAbsEl.textContent = data.twap != null ? `TWAP ${fmtUsd(data.twap, 2)}` : "TWAP $—";
+    twapAbsEl.textContent = data.twap != null ? fmtUsd(data.twap, 2) : "$—";
   }
-  if (venuesBadge) {
-    const venuesCount = side === "up" ? data.venues_up : side === "down" ? data.venues_down : (data.venues_up || data.venues_down || 0);
-    venuesBadge.textContent = `${venuesCount ?? 0} / 4 VENUES`;
+  if (twapSub) twapSub.textContent = `Must match ${venue}`;
+  if (data.twap_delta == null || data.btc_delta == null) {
+    setBadge(twapAgreeBadge, "—", "");
+  } else if (
+    (data.btc_delta > 0 && data.twap_delta > 0) ||
+    (data.btc_delta < 0 && data.twap_delta < 0)
+  ) {
+    setBadge(twapAgreeBadge, "AGREES", "is-ok");
+  } else {
+    setBadge(twapAgreeBadge, "DISAGREES", "is-no");
   }
 
   // 7. Strategy Checklist Matrix
   const checksGrid = root.getElementById("radar-checks-grid");
   const summaryBadge = root.getElementById("checklist-summary-badge");
-  const checks = data.checks || [];
+  const checks = (data.checks || []).filter((c) => c.enabled || c.id !== "venues");
 
   let passingCount = 0;
   let enabledCount = 0;

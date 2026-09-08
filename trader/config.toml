@@ -1,20 +1,17 @@
 # Match Strategy Lab. One FAK buy per 5m window when every enabled filter is true.
 
-# Minutes from window open. 2.5–3.0 is 2:30 to 3:00. Last 3 minutes of a 5m window is 2.0–5.0.
+# Minutes from window open.
 elapsed_from_min = 0.0
-elapsed_to_min = 1.0
+elapsed_to_min = 2.5
 
 # Trigger band: chosen side's mid must *enter* [odds_min, odds_max] during the elapsed window
 # (already inside at the first in-band tick does not count).
-# Point underdog: odds_min = odds_max = 0.35 (cross 0.35).
-# Range trigger: e.g. odds_min = 0.30, odds_max = 0.35.
-odds_min = 0.1
-odds_max = 0.35
+odds_min = 0.05
+odds_max = 0.55
 
-# Hard cap on the ask (separate from trigger): the Lab fills at the ask on the sample where the
-# mid enters the band, so allow a few ticks of spread above odds_max; skip when the ask is higher.
-# Omit to default to odds_max. Example: trigger at 0.35, pay up to 0.40 → fak_limit = 0.40
-fak_limit = 0.40
+# Hard cap on the ask (separate from trigger). Lab fills at the ask on the sample
+# where the mid enters the band; allow a few ticks of spread above odds_max.
+fak_limit = 0.60
 
 use_btc_distance = true
 # Spot venue that stands in for BTC (Lab "BTC reference"): binance_spot | coinbase_spot | bybit_spot | median
@@ -23,9 +20,16 @@ min_btc_away = 0
 max_btc_away = 50
 
 use_twap = true
-use_venues = false
-min_venues = 2
+use_venues = true
+min_venues = 4
 
-stake_usd = 50
+stake_usd = 100
 min_seconds_left = 3
 tick_size = "0.01"
+
+# When to trade. Empty = all. Hours are local clock (0-23). Weekdays are
+# Sun=0 or Mon,Tue,... Markets match the Lab: tokyo_open, london_open,
+# wall_open, asia, london, wall, overlap, off.
+hours = []
+weekdays = []
+sessions = ["tokyo_open", "wall"]

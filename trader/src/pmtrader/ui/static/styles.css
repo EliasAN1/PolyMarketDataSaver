@@ -571,6 +571,30 @@ body {
   color: var(--text-dim);
 }
 
+.pillar-badge.is-up {
+  color: var(--emerald-light);
+  border-color: var(--emerald-border);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.pillar-badge.is-down {
+  color: var(--crimson-light);
+  border-color: var(--crimson-border);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.pillar-badge.is-ok {
+  color: var(--emerald-light);
+  border-color: var(--emerald-border);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.pillar-badge.is-no {
+  color: var(--crimson-light);
+  border-color: var(--crimson-border);
+  background: rgba(239, 68, 68, 0.08);
+}
+
 .pillar-main {
   display: flex;
   flex-direction: column;
@@ -667,6 +691,116 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 16px;
+}
+
+.when-panel {
+  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.when-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.when-title {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.when-meta {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.when-reset {
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-main);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.when-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.when-row:last-child {
+  margin-bottom: 0;
+}
+
+.when-row-label {
+  width: 58px;
+  flex-shrink: 0;
+  padding-top: 5px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.when-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.when-chip {
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  border-radius: 5px;
+  padding: 4px 7px;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.38;
+}
+
+.when-chip.is-on {
+  opacity: 1;
+  color: var(--text-main);
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.when-chip:hover {
+  opacity: 1;
+}
+
+.when-chips-hours .when-chip {
+  min-width: 2.1rem;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  font-family: var(--font-mono);
 }
 
 .checklist-header {

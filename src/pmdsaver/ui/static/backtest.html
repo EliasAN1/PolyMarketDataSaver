@@ -6,9 +6,9 @@
   <title>BTC 5m · strategy lab</title>
   <link rel="stylesheet" href="/static/app.css?v=4" />
   <link rel="stylesheet" href="/static/backtest.css?v=5" />
-  <link rel="stylesheet" href="/static/lab.css?v=6" />
-  <script src="/static/lab_engine.js?v=5"></script>
-  <script src="/static/lab.js?v=6" defer></script>
+  <link rel="stylesheet" href="/static/lab.css?v=9" />
+  <script src="/static/lab_engine.js?v=7"></script>
+  <script src="/static/lab.js?v=9" defer></script>
 </head>
 <body>
   <header class="bt-header">
@@ -151,6 +151,32 @@
           <input class="lab-filter-range" id="minVenuesRange" type="range" min="1" max="4" step="1" value="2" />
         </div>
       </div>
+
+      <div class="lab-group">
+        <h2>When</h2>
+        <p class="lab-hint">Same clock as the live trader. Hours and days are local; markets are UTC. Empty = all. Click to isolate, click more to add.</p>
+        <div class="lab-when-block">
+          <div class="lab-when-block-head">
+            <span>Days</span>
+            <button type="button" class="lab-when-reset" data-when="weekdays" hidden>All days</button>
+          </div>
+          <div class="lab-when-chips" id="whenWeekdayChips"></div>
+        </div>
+        <div class="lab-when-block">
+          <div class="lab-when-block-head">
+            <span>Markets</span>
+            <button type="button" class="lab-when-reset" data-when="sessions" hidden>All sessions</button>
+          </div>
+          <div class="lab-when-chips" id="whenSessionChips"></div>
+        </div>
+        <div class="lab-when-block">
+          <div class="lab-when-block-head">
+            <span>Hours (local)</span>
+            <button type="button" class="lab-when-reset" data-when="hours" hidden>All hours</button>
+          </div>
+          <div class="lab-when-chips lab-when-chips-hours" id="whenHourChips"></div>
+        </div>
+      </div>
     </aside>
 
     <main class="lab-main">
@@ -215,6 +241,33 @@
           <div class="value" id="kpiStreak">—</div>
           <div class="meta" id="kpiStreakMeta">—</div>
         </div>
+      </section>
+
+      <section class="lab-when-grid">
+        <section class="lab-panel lab-when-hours">
+          <div class="lab-panel-head">
+            <h2>Hours of the day</h2>
+            <span class="muted" id="hoursMeta">Local time · click to filter</span>
+            <button type="button" class="lab-when-reset" data-when="hours" hidden>All hours</button>
+          </div>
+          <div class="lab-bars" id="hoursBars"></div>
+        </section>
+        <section class="lab-panel">
+          <div class="lab-panel-head">
+            <h2>Days of the week</h2>
+            <span class="muted" id="weekdayMeta">Local time · click to filter</span>
+            <button type="button" class="lab-when-reset" data-when="weekdays" hidden>All days</button>
+          </div>
+          <div class="lab-bars lab-bars-week" id="weekdayBars"></div>
+        </section>
+        <section class="lab-panel">
+          <div class="lab-panel-head">
+            <h2>Market sessions</h2>
+            <span class="muted" id="sessionMeta">UTC · click to filter</span>
+            <button type="button" class="lab-when-reset" data-when="sessions" hidden>All sessions</button>
+          </div>
+          <div class="lab-bars lab-bars-sessions" id="sessionBars"></div>
+        </section>
       </section>
 
       <section class="lab-panel">

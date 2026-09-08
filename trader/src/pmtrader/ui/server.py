@@ -12,10 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from pmtrader.config import env
+from pmtrader.config import env, persist_when
 from pmtrader.live import live_payload
 from pmtrader.profile import collect_profile
 from pmtrader.tradelog import analyzer_records
+from pmtrader.when import session_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,47 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
     @app.get("/api/live")
     def api_live() -> JSONResponse:
         return JSONResponse(live_payload(app.state.trader))
+
+    @app.get("/api/when")
+    def api_when_get() -> JSONResponse:
+        trader = app.state.trader
+        if trader is None:
+            return JSONResponse({"running": False, "catalog": session_catalog()})
+        return JSONResponse(
+            {
+                "running": True,
+                **trader.cfg.when_payload(),
+                "ok": trader.cfg.when_ok(trader.snap.window_start),
+                "catalog": session_catalog(),
+            }
+        )
+
+    @app.post("/api/when")
+    async def api_when_set(request: Request) -> JSONResponse:
+        trader = app.state.trader
+        if trader is None:
+            return JSONResponse({"error": "trader offline"}, status_code=503)
+        body = await request.json()
+        trader.cfg.set_when(
+            hours=body.get("hours"),
+            weekdays=body.get("weekdays"),
+            sessions=body.get("sessions"),
+        )
+        path = getattr(trader, "config_path", None)
+        if path is not None:
+            try:
+                persist_when(Path(path), trader.cfg)
+            except OSError as exc:
+                logger.warning("could not persist when-filter: %s", exc)
+        logger.info("when filter %s", trader.cfg.when_label())
+        return JSONResponse(
+            {
+                "running": True,
+                **trader.cfg.when_payload(),
+                "ok": trader.cfg.when_ok(trader.snap.window_start),
+                "catalog": session_catalog(),
+            }
+        )
 
     @app.get("/api/notify")
     def api_notify() -> JSONResponse:

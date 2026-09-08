@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterator
 
-from pmdsaver.outcome import binary_outcome
+from pmdsaver.outcome import OFFICIAL_SOURCES, infer_outcome_from_odds_ticks
 
 LATE_JOIN_SECONDS = 45
 PRICE_BUCKET_MS = 100
@@ -159,38 +159,24 @@ def resolve_window(conn: sqlite3.Connection, row: sqlite3.Row) -> WindowTape:
         )
 
     final = str(stored_final) if stored_final else None
-    verified = stored_outcome in ("up", "down")
-    source = stored_source if verified else ("gamma" if final else None)
+    # Same order as the live trader: stored CLOB/Gamma winner, else CLOB $1/$0
+    # split from the book around close. Do not guess from TWAP/spot vs PTB.
+    if stored_outcome in ("up", "down") and stored_source in OFFICIAL_SOURCES:
+        outcome = stored_outcome
+        source = stored_source
+    else:
+        outcome = infer_outcome_from_odds_ticks(conn, window_id=window_id, window_end=end)
+        source = "clob" if outcome else None
     if final is None:
-        final, guessed = _twap_near_end(conn, window_id, end)
-        if not verified:
-            source = guessed
+        final, _guessed = _twap_near_end(conn, window_id, end)
     if final is None:
-        final, guessed = _spot_at_end(conn, window_id, start, end, "binance_spot")
-        if not verified:
-            source = guessed
+        final, _guessed = _spot_at_end(conn, window_id, start, end, "binance_spot")
     if final is None:
-        final, guessed = _spot_at_end(conn, window_id, start, end, "coinbase_spot")
-        if not verified:
-            source = guessed
+        final, _guessed = _spot_at_end(conn, window_id, start, end, "coinbase_spot")
 
-    outcome = stored_outcome if verified else binary_outcome(final, ptb)
-    if not verified and final is None:
-        return WindowTape(
-            window_id, slug, start, end, ptb, ptb_source, "", "", "", "no_resolution"
-        )
     if outcome is None:
         return WindowTape(
-            window_id,
-            slug,
-            start,
-            end,
-            ptb,
-            ptb_source,
-            final or "",
-            "",
-            source or "unknown",
-            "tie",
+            window_id, slug, start, end, ptb, ptb_source, "", "", "", "no_resolution"
         )
 
     first_odds_ms = _first_odds_ms(conn, window_id)

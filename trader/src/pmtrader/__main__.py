@@ -54,7 +54,7 @@ def main() -> None:
     )
 
     orders = OrderClient(dry_run=args.dry_run, tick_size=cfg.tick_size, log_path=args.log_file)
-    trader = Trader(cfg=cfg, orders=orders)
+    trader = Trader(cfg=cfg, orders=orders, config_path=args.config.resolve())
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

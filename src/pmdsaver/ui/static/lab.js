@@ -15,6 +15,23 @@ function fmtPnl(value) {
   return `${sign}${value.toFixed(4)}`;
 }
 
+function fmtPnlShort(value) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const sign = value > 0 ? "+" : "";
+  const abs = Math.abs(value);
+  if (abs >= 100) return `${sign}${value.toFixed(0)}`;
+  if (abs >= 10) return `${sign}${value.toFixed(1)}`;
+  return `${sign}${value.toFixed(2)}`;
+}
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function fmtWindowTime(ts) {
   if (ts == null) return "—";
   const d = new Date(Number(ts) * 1000);
@@ -61,6 +78,52 @@ const state = {
   lastResult: null,
   loading: false,
 };
+
+const whenState = {
+  hours: null,
+  weekdays: null,
+  sessions: null,
+};
+
+const WHEN_KEYS = {
+  hours: () => Array.from({ length: 24 }, (_, i) => i),
+  weekdays: () => [1, 2, 3, 4, 5, 6, 0],
+  sessions: () => (LabEngine.SESSIONS || []).map((session) => session.key),
+};
+
+function coerceWhenKey(kind, key) {
+  return kind === "sessions" ? String(key) : Number(key);
+}
+
+const WHEN_STORAGE = "lab-when-v1";
+
+function saveWhenState() {
+  try {
+    localStorage.setItem(WHEN_STORAGE, JSON.stringify(whenState));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function loadWhenState() {
+  try {
+    const raw = localStorage.getItem(WHEN_STORAGE);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    for (const kind of ["hours", "weekdays", "sessions"]) {
+      if (parsed[kind] === undefined) continue;
+      const keys = WHEN_KEYS[kind]();
+      const incoming = parsed[kind];
+      if (incoming == null || !Array.isArray(incoming) || !incoming.length || incoming.length === keys.length) {
+        whenState[kind] = null;
+      } else {
+        whenState[kind] = incoming.map((key) => coerceWhenKey(kind, key));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
 
 /* ------------------------------------------------------------------ *
  * Slider <-> number sync + enable/disable on toggle
@@ -192,6 +255,9 @@ function getParams() {
     minVolume: num("minVolumeNum", 50),
     useVenues: $("useVenues").checked,
     minVenues: Math.max(1, Math.round(num("minVenuesNum", 2))),
+    hours: whenState.hours,
+    weekdays: whenState.weekdays,
+    sessions: whenState.sessions,
   };
 }
 
@@ -222,6 +288,18 @@ function setParams(params) {
   for (const t of toggles) {
     if (params[t] != null) $(t).checked = params[t];
   }
+  for (const kind of ["hours", "weekdays", "sessions"]) {
+    if (params[kind] !== undefined) {
+      const keys = WHEN_KEYS[kind]();
+      const incoming = params[kind];
+      if (incoming == null || !Array.isArray(incoming) || !incoming.length || incoming.length === keys.length) {
+        whenState[kind] = null;
+      } else {
+        whenState[kind] = incoming.map((key) => coerceWhenKey(kind, key));
+      }
+    }
+  }
+  saveWhenState();
   for (const pair of FILTER_PAIRS) applyFilterEnabled(pair);
   const lo = num("oddsLoNum", 0.2);
   const hi = num("oddsHiNum", 0.3);
@@ -266,8 +344,147 @@ function recompute() {
   const result = LabEngine.evaluate(state.windows, params);
   state.lastResult = result;
   renderKpis(result.summary);
+  renderWhen(result);
   drawEquity(result.equity);
   renderTrades(result.trades);
+}
+
+function renderWhen(result) {
+  renderBars("hoursBars", result.byHour, { dense: true, kind: "hours" });
+  renderBars("weekdayBars", result.byWeekday, { dense: false, kind: "weekdays" });
+  renderBars("sessionBars", result.bySession, { dense: false, kind: "sessions" });
+  renderWhenChips();
+  const hourMeta = $("hoursMeta");
+  const weekMeta = $("weekdayMeta");
+  const sessionMeta = $("sessionMeta");
+  if (hourMeta) hourMeta.textContent = whenMeta(result.byHour, "hours", "Local time");
+  if (weekMeta) weekMeta.textContent = whenMeta(result.byWeekday, "weekdays", "Local time");
+  if (sessionMeta) sessionMeta.textContent = whenMeta(result.bySession, "sessions", "UTC");
+  document.querySelectorAll(".lab-when-reset").forEach((btn) => {
+    btn.hidden = whenState[btn.dataset.when] == null;
+  });
+}
+
+function renderWhenChips() {
+  const hourItems = WHEN_KEYS.hours().map((h) => ({ key: h, label: String(h).padStart(2, "0") }));
+  const dayItems = [
+    { key: 1, label: "Mon" }, { key: 2, label: "Tue" }, { key: 3, label: "Wed" },
+    { key: 4, label: "Thu" }, { key: 5, label: "Fri" }, { key: 6, label: "Sat" }, { key: 0, label: "Sun" },
+  ];
+  const sessionItems = (LabEngine.SESSIONS || []).map((s) => ({ key: s.key, label: s.short || s.label }));
+  paintWhenChips("whenHourChips", hourItems, "hours");
+  paintWhenChips("whenWeekdayChips", dayItems, "weekdays");
+  paintWhenChips("whenSessionChips", sessionItems, "sessions");
+}
+
+function paintWhenChips(id, items, kind) {
+  const root = $(id);
+  if (!root) return;
+  const selected = whenState[kind];
+  root.innerHTML = items.map((item) => {
+    const on = selected == null || selected.some((key) => String(key) === String(item.key));
+    return `<button type="button" class="lab-when-chip ${on ? "is-on" : ""}" data-when-key="${esc(String(item.key))}">${esc(item.label)}</button>`;
+  }).join("");
+}
+
+function whenMeta(rows, kind, clock) {
+  const selected = whenState[kind];
+  const prefix = selected
+    ? `${selected.length} selected · `
+    : `${clock} · click to filter · `;
+  const used = (rows || []).filter((row) => {
+    if (row.trades <= 0) return false;
+    if (!selected) return true;
+    return selected.some((key) => String(key) === String(row.key));
+  });
+  if (!used.length) return `${prefix}no trades`;
+  let best = used[0];
+  let worst = used[0];
+  for (const row of used) {
+    if (row.pnl > best.pnl) best = row;
+    if (row.pnl < worst.pnl) worst = row;
+  }
+  const unit = kind === "hours" ? "h" : "";
+  return `${prefix}Best ${best.label}${unit} ${fmtPnl(best.pnl)} · Worst ${worst.label}${unit} ${fmtPnl(worst.pnl)}`;
+}
+
+function sessionTitle(row) {
+  const session = (LabEngine.SESSIONS || []).find((item) => item.key === row.key);
+  if (!session) return row.label;
+  const utc = `${LabEngine.clockUtc(session.start)}–${LabEngine.clockUtc(session.end)} UTC`;
+  const offsetMin = -new Date().getTimezoneOffset();
+  const local = `${LabEngine.clockUtc(session.start + offsetMin)}–${LabEngine.clockUtc(session.end + offsetMin)} local`;
+  return `${session.label} · ${utc} · ${local}`;
+}
+
+function renderBars(id, rows, { dense, kind }) {
+  const root = $(id);
+  if (!root) return;
+  if (!rows || !rows.length) {
+    root.innerHTML = `<div class="muted">No trades</div>`;
+    return;
+  }
+  const selected = whenState[kind];
+  root.innerHTML = rows.map((row) => {
+    const height = Math.max(4, Math.round(Math.abs(row.frac) * 100));
+    const cls = row.trades === 0 ? "is-empty" : row.pnl > 0 ? "is-up" : row.pnl < 0 ? "is-down" : "is-flat";
+    const on = selected == null || selected.some((key) => String(key) === String(row.key));
+    const rate = row.winRate == null ? "—" : `${Math.round(row.winRate * 100)}%`;
+    const head = kind === "sessions" ? sessionTitle(row) : row.label;
+    const title = row.trades
+      ? `${head}: ${fmtPnl(row.pnl)} · ${row.trades} trades · ${rate} win`
+      : `${head}: no trades`;
+    return `
+      <button type="button" class="lab-bar ${cls} ${dense ? "is-dense" : ""} ${on ? "is-on" : "is-off"}" data-when-key="${esc(String(row.key))}" title="${esc(title)}">
+        <div class="lab-bar-track">
+          <div class="lab-bar-fill" style="height:${height}%"></div>
+        </div>
+        <span class="lab-bar-label">${esc(row.label)}</span>
+        <span class="lab-bar-val">${row.trades ? fmtPnlShort(row.pnl) : "—"}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function toggleWhen(kind, rawKey) {
+  const keys = WHEN_KEYS[kind]();
+  const key = coerceWhenKey(kind, rawKey);
+  const selected = whenState[kind];
+  if (selected == null) {
+    whenState[kind] = [key];
+  } else {
+    const next = selected.filter((item) => String(item) !== String(key));
+    if (next.length === selected.length) next.push(key);
+    whenState[kind] = next.length === 0 || next.length === keys.length ? null : next;
+  }
+  saveWhenState();
+  scheduleRecompute();
+}
+
+function wireWhenBars() {
+  for (const [id, kind] of [
+    ["hoursBars", "hours"],
+    ["weekdayBars", "weekdays"],
+    ["sessionBars", "sessions"],
+    ["whenHourChips", "hours"],
+    ["whenWeekdayChips", "weekdays"],
+    ["whenSessionChips", "sessions"],
+  ]) {
+    const root = $(id);
+    if (!root) continue;
+    root.addEventListener("click", (event) => {
+      const bar = event.target.closest("[data-when-key]");
+      if (!bar || !root.contains(bar)) return;
+      toggleWhen(kind, bar.dataset.whenKey);
+    });
+  }
+  document.querySelectorAll(".lab-when-reset").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      whenState[btn.dataset.when] = null;
+      saveWhenState();
+      scheduleRecompute();
+    });
+  });
 }
 
 /* ------------------------------------------------------------------ *
@@ -748,7 +965,7 @@ function onSweepClick(event) {
  * ------------------------------------------------------------------ */
 
 function initWorker() {
-  state.worker = new Worker("/static/lab_worker.js?v=5");
+  state.worker = new Worker("/static/lab_worker.js?v=7");
   state.worker.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === "loaded") {
@@ -817,6 +1034,17 @@ function describeParams(params) {
   if (params.useTwap) parts.push("TWAP agrees");
   if (params.useVolume) parts.push(`vol≥${params.minVolume.toFixed(0)}`);
   if (params.useVenues) parts.push(`venues≥${params.minVenues}`);
+  if (params.hours && params.hours.length) {
+    parts.push(`hours ${params.hours.map((h) => String(h).padStart(2, "0")).join(",")}`);
+  }
+  if (params.weekdays && params.weekdays.length) {
+    const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    parts.push(params.weekdays.map((d) => names[d] || d).join(","));
+  }
+  if (params.sessions && params.sessions.length) {
+    const labels = Object.fromEntries((LabEngine.SESSIONS || []).map((s) => [s.key, s.short]));
+    parts.push(params.sessions.map((key) => labels[key] || key).join(","));
+  }
   return parts.join(" · ") || "no filters";
 }
 
@@ -935,7 +1163,9 @@ async function loadTape() {
 /* ------------------------------------------------------------------ */
 
 function init() {
+  loadWhenState();
   wireFilters();
+  wireWhenBars();
   wireTradesToolbar();
   initWorker();
   $("rangeSel").addEventListener("change", loadTape);

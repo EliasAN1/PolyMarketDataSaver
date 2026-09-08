@@ -3,7 +3,7 @@
  * re-sends the (large) tape payload — only params are exchanged after the
  * initial load.
  */
-importScripts("/static/lab_engine.js?v=5");
+importScripts("/static/lab_engine.js?v=7");
 
 let windows = [];
 

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=4" />
+  <link rel="stylesheet" href="/styles.css?v=6" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
@@ -104,18 +104,18 @@
             </div>
           </article>
 
-          <!-- Pillar 2: Live Spot Delta -->
+          <!-- Pillar 2: Binance vs PTB (btc_source) -->
           <article class="pillar-card btc-pillar" id="pillar-btc-card">
             <div class="pillar-top">
-              <span class="pillar-label">BTC Spot vs PTB</span>
-              <span class="pillar-badge" id="btc-side-badge">SIDE —</span>
+              <span class="pillar-label" id="pillar-btc-label">Binance vs PTB</span>
+              <span class="pillar-badge" id="btc-side-badge">—</span>
             </div>
             <div class="pillar-main">
               <span class="pillar-value mono" id="pillar-btc-delta">—</span>
-              <span class="pillar-spot-val mono" id="pillar-btc-spot">BTC $—</span>
+              <span class="pillar-spot-val mono" id="pillar-btc-spot">$—</span>
             </div>
             <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-btc-sub">Target: ≤ $50</span>
+              <span class="pillar-sub" id="pillar-btc-sub">≤ $50 from PTB</span>
             </div>
           </article>
 
@@ -142,21 +142,41 @@
             </div>
           </article>
 
-          <!-- Pillar 4: TWAP & Venues -->
+          <!-- Pillar 4: TWAP vs PTB -->
           <article class="pillar-card twap-pillar">
             <div class="pillar-top">
-              <span class="pillar-label">TWAP & Venues</span>
-              <span class="pillar-badge" id="venues-count-badge">0 / 4 VENUES</span>
+              <span class="pillar-label">TWAP vs PTB</span>
+              <span class="pillar-badge" id="twap-agree-badge">—</span>
             </div>
             <div class="pillar-main">
               <span class="pillar-value mono" id="pillar-twap-delta">—</span>
-              <span class="pillar-twap-val mono" id="pillar-twap-abs">TWAP $—</span>
+              <span class="pillar-twap-val mono" id="pillar-twap-abs">$—</span>
             </div>
             <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-venues-sub">Consensus agreement</span>
+              <span class="pillar-sub" id="pillar-twap-sub">Must match Binance</span>
             </div>
           </article>
         </div>
+
+        <section class="when-panel" id="when-panel">
+          <div class="when-head">
+            <span class="when-title">When to trade</span>
+            <span class="when-meta" id="when-meta">All hours · click to filter</span>
+            <button type="button" class="when-reset" id="when-reset-all" hidden>All</button>
+          </div>
+          <div class="when-row">
+            <span class="when-row-label">Days</span>
+            <div class="when-chips" id="when-weekdays"></div>
+          </div>
+          <div class="when-row">
+            <span class="when-row-label">Markets</span>
+            <div class="when-chips" id="when-sessions"></div>
+          </div>
+          <div class="when-row">
+            <span class="when-row-label">Hours</span>
+            <div class="when-chips when-chips-hours" id="when-hours"></div>
+          </div>
+        </section>
 
         <!-- Strategy Checklist Container -->
         <div class="strategy-checklist-container">
@@ -273,6 +293,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=4"></script
+  <script type="module" src="/js/app.js?v=6"></script>
 </body>
 </html>

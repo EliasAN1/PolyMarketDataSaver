@@ -8,6 +8,7 @@ import math
 import sys
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from pmtrader.clock import (
     WINDOW_SECONDS,
@@ -46,6 +47,7 @@ SAMPLE_OFFSET_S = 0.45
 class Trader:
     cfg: TraderConfig
     orders: OrderClient
+    config_path: Path | None = None
     gamma: GammaClient = field(default_factory=GammaClient)
     snap: LiveSnapshot = field(default_factory=LiveSnapshot)
     current: Window = field(default_factory=current_window)

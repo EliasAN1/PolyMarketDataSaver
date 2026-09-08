@@ -210,6 +210,42 @@
     return `${y}-${m}-${day}`;
   }
 
+  function emptyBucket() {
+    return { pnl: 0, trades: 0, wins: 0 };
+  }
+
+  function addBucket(map, key, pnl, won) {
+    let bucket = map.get(key);
+    if (!bucket) {
+      bucket = emptyBucket();
+      map.set(key, bucket);
+    }
+    bucket.pnl += pnl;
+    bucket.trades += 1;
+    if (won) bucket.wins += 1;
+  }
+
+  function finalizeBuckets(map, keys, labels) {
+    let maxAbs = 0;
+    for (let i = 0; i < keys.length; i++) {
+      const bucket = map.get(keys[i]);
+      if (bucket && Math.abs(bucket.pnl) > maxAbs) maxAbs = Math.abs(bucket.pnl);
+    }
+    if (maxAbs <= 0) maxAbs = 1;
+    return keys.map((key, i) => {
+      const bucket = map.get(key) || emptyBucket();
+      return {
+        key,
+        label: labels[i],
+        pnl: bucket.pnl,
+        trades: bucket.trades,
+        wins: bucket.wins,
+        winRate: bucket.trades ? bucket.wins / bucket.trades : null,
+        frac: bucket.pnl / maxAbs,
+      };
+    });
+  }
+
   function median(values) {
     if (!values.length) return null;
     const sorted = values.slice().sort((a, b) => a - b);
@@ -218,10 +254,99 @@
     return (sorted[mid - 1] + sorted[mid]) / 2;
   }
 
+  // Cash-market windows in UTC, widened so DST does not drop the open.
+  // Tokyo has no DST. London open covers GMT and BST. Wall St open covers
+  // EST and EDT first hours.
+  const SESSIONS = [
+    { key: "tokyo_open", label: "Tokyo open", short: "Tokyo", start: 0, end: 150 },
+    { key: "london_open", label: "London open", short: "Lon open", start: 7 * 60, end: 10 * 60 },
+    { key: "wall_open", label: "Wall St open", short: "NY open", start: 13 * 60 + 30, end: 16 * 60 + 30 },
+    { key: "asia", label: "Asia", short: "Asia", start: 0, end: 8 * 60 },
+    { key: "london", label: "London", short: "London", start: 7 * 60, end: 16 * 60 + 30 },
+    { key: "wall", label: "Wall Street", short: "Wall St", start: 13 * 60, end: 21 * 60 },
+    { key: "overlap", label: "London–NY", short: "Overlap", start: 13 * 60, end: 16 * 60 + 30 },
+    { key: "off", label: "Off hours", short: "Off", start: 21 * 60, end: 0 },
+  ];
+
+  function clockUtc(mins) {
+    const wrapped = ((mins % 1440) + 1440) % 1440;
+    const h = Math.floor(wrapped / 60);
+    const m = wrapped % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  function inSessionRange(mins, start, end) {
+    if (start === end) return false;
+    if (start < end) return mins >= start && mins < end;
+    return mins >= start || mins < end;
+  }
+
+  function utcMinutesOf(date) {
+    return date.getUTCHours() * 60 + date.getUTCMinutes();
+  }
+
+  function sessionsFor(date) {
+    const mins = utcMinutesOf(date);
+    const keys = [];
+    for (let i = 0; i < SESSIONS.length; i++) {
+      const session = SESSIONS[i];
+      if (inSessionRange(mins, session.start, session.end)) keys.push(session.key);
+    }
+    return keys;
+  }
+
+  function asKeyList(value, numeric) {
+    if (value == null) return null;
+    if (!Array.isArray(value) || !value.length) return null;
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < value.length; i++) {
+      const key = numeric ? Number(value[i]) : String(value[i]);
+      if (numeric && !Number.isFinite(key)) continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(key);
+    }
+    return out.length ? out : null;
+  }
+
+  function listHas(list, key) {
+    if (!list) return true;
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] === key) return true;
+    }
+    return false;
+  }
+
+  function passesWhen(date, params, ignore) {
+    if (!date || !Number.isFinite(date.getTime())) return false;
+    const hours = ignore === "hours" ? null : asKeyList(params && params.hours, true);
+    const weekdays = ignore === "weekdays" ? null : asKeyList(params && params.weekdays, true);
+    const sessions = ignore === "sessions" ? null : asKeyList(params && params.sessions, false);
+    if (hours && !listHas(hours, date.getHours())) return false;
+    if (weekdays && !listHas(weekdays, date.getDay())) return false;
+    if (sessions) {
+      const hit = sessionsFor(date);
+      let ok = false;
+      for (let i = 0; i < sessions.length; i++) {
+        if (listHas(hit, sessions[i])) {
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) return false;
+    }
+    return true;
+  }
+
   function evaluate(windows, params) {
     const trades = [];
     const equity = [];
     const byDay = new Map();
+    const byHour = new Map();
+    const byWeekday = new Map();
+    const bySession = new Map();
+    let considered = 0;
     let eq = 0;
     let wins = 0;
     let losses = 0;
@@ -249,10 +374,16 @@
 
     for (let i = 0; i < windows.length; i++) {
       const win = windows[i];
-      touchDay(win.start);
+      const when = new Date(Number(win.start) * 1000);
+      const whenOk = Number.isFinite(when.getTime());
+      const pass = whenOk && passesWhen(when, params);
+      if (pass) {
+        considered++;
+        touchDay(win.start);
+      }
       const entry = findEntry(win, params);
       if (!entry) {
-        noTrade++;
+        if (pass) noTrade++;
         continue;
       }
       const shares = params.stake / entry.fillPrice;
@@ -260,6 +391,19 @@
       const won = entry.side === win.outcome;
       const payout = won ? shares : 0;
       const pnl = payout - params.stake - fee;
+      if (whenOk) {
+        if (passesWhen(when, params, "hours")) {
+          addBucket(byHour, when.getHours(), pnl, won);
+        }
+        if (passesWhen(when, params, "weekdays")) {
+          addBucket(byWeekday, when.getDay(), pnl, won);
+        }
+        if (passesWhen(when, params, "sessions")) {
+          const hit = sessionsFor(when);
+          for (let s = 0; s < hit.length; s++) addBucket(bySession, hit[s], pnl, won);
+        }
+      }
+      if (!pass) continue;
       eq += pnl;
       feesPaid += fee;
       fillSum += entry.fillPrice;
@@ -328,11 +472,25 @@
     const avgWin = wins ? grossWin / wins : null;
     const avgLoss = losses ? grossLoss / losses : null;
 
+    const hourKeys = [];
+    const hourLabels = [];
+    for (let h = 0; h < 24; h++) {
+      hourKeys.push(h);
+      hourLabels.push(String(h).padStart(2, "0"));
+    }
+    const weekdayOrder = [1, 2, 3, 4, 5, 6, 0];
+    const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const sessionKeys = SESSIONS.map((session) => session.key);
+    const sessionLabels = SESSIONS.map((session) => session.short);
+
     return {
       trades,
       equity,
+      byHour: finalizeBuckets(byHour, hourKeys, hourLabels),
+      byWeekday: finalizeBuckets(byWeekday, weekdayOrder, weekdayLabels),
+      bySession: finalizeBuckets(bySession, sessionKeys, sessionLabels),
       summary: {
-        windows: windows.length,
+        windows: considered,
         trades: totalTrades,
         wins,
         losses,
@@ -355,7 +513,7 @@
         avgLoss,
         payoff: avgWin != null && avgLoss ? avgWin / avgLoss : null,
         avgFill: totalTrades ? fillSum / totalTrades : null,
-        participation: windows.length ? totalTrades / windows.length : null,
+        participation: considered ? totalTrades / considered : null,
         maxWinStreak,
         maxLossStreak,
         upTrades,
@@ -377,6 +535,10 @@
   const LabEngine = {
     ROW,
     DEFAULT_BTC_SOURCE,
+    SESSIONS,
+    clockUtc,
+    sessionsFor,
+    passesWhen,
     btcSourceColumn,
     evaluate,
     sweep,

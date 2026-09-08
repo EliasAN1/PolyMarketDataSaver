@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 from pmtrader.config import TraderConfig
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, _ask_fillable
+from pmtrader.when import WEEKDAY_NAMES, session_catalog
 
 # Skip reasons raised after the odds-band test passed on the last sample.
 _PAST_BAND_REASONS = frozenset({"ok", "no_twap", "twap_disagree", "venues", "no_ask", "ask_above_cap"})
+
+_VENUE_NAMES = {
+    "binance_spot": "Binance",
+    "coinbase_spot": "Coinbase",
+    "bybit_spot": "Bybit",
+    "median": "Median",
+}
+
+
+def _venue_name(cfg: TraderConfig) -> str:
+    return _VENUE_NAMES.get(cfg.btc_source, "Binance")
 
 
 def live_payload(trader: Any | None) -> dict[str, Any]:
@@ -80,6 +93,12 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "stake_usd": cfg.stake_usd,
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,
+            **cfg.when_payload(),
+        },
+        "when": {
+            **cfg.when_payload(),
+            "ok": cfg.when_ok(snap.window_start or now),
+            "catalog": session_catalog(),
         },
         "checks": _checks(snap, cfg, now_s=now, traded=traded, side=side, decision=decision),
     }
@@ -163,7 +182,23 @@ def _checks(
     else:
         cross_val = "Waiting" if not crossed else "Triggered"
 
+    when_ok = (not cfg.when_filter_on()) or cfg.when_ok(snap.window_start or now_s)
+    when_now = ""
+    if snap.window_start:
+        opened = datetime.fromtimestamp(snap.window_start)
+        when_now = f"{WEEKDAY_NAMES[int(opened.strftime('%w'))]} {opened.strftime('%H:%M')}"
+    else:
+        when_now = "No window"
+
     return [
+        {
+            "id": "when",
+            "name": "Hours / markets",
+            "target": cfg.when_label(),
+            "ok": when_ok,
+            "value": when_now,
+            "enabled": True,
+        },
         {
             "id": "time",
             "name": "Elapsed Window",
@@ -186,7 +221,7 @@ def _checks(
         },
         {
             "id": "btc",
-            "name": "BTC Distance",
+            "name": f"{_venue_name(cfg)} vs PTB",
             "target": btc_target,
             "ok": btc_ok,
             "value": _signed(btc_delta, 1),
@@ -211,7 +246,7 @@ def _checks(
         {
             "id": "twap",
             "name": "TWAP Agrees",
-            "target": "Directional",
+            "target": f"Same side as {_venue_name(cfg)}",
             "ok": twap_ok,
             "value": _signed(twap_delta, 1),
             "enabled": cfg.use_twap,

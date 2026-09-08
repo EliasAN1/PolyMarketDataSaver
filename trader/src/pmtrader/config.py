@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
+
+from pmtrader.when import (
+    dump_hours,
+    dump_sessions,
+    dump_weekdays,
+    normalize_hours,
+    normalize_sessions,
+    normalize_weekdays,
+    passes_when,
+    when_active,
+    when_label,
+)
 
 BTC_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot", "median")
 
@@ -39,8 +53,17 @@ class TraderConfig:
     stake_usd: float = 10.0
     min_seconds_left: float = 3.0
     tick_size: str = "0.01"
+    # Empty / omitted = no clock filter (trade every hour / day / session).
+    # Hours 0-23 local. Weekdays 0=Sun..6=Sat or Mon,Tue,... Sessions: tokyo_open,
+    # london_open, wall_open, asia, london, wall, overlap, off.
+    hours: tuple[int, ...] | None = None
+    weekdays: tuple[int, ...] | None = None
+    sessions: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
+        self.hours = normalize_hours(self.hours)
+        self.weekdays = normalize_weekdays(self.weekdays)
+        self.sessions = normalize_sessions(self.sessions)
         if not 0 < self.odds_min <= self.odds_max < 1:
             raise ValueError("odds_min / odds_max must satisfy 0 < min <= max < 1")
         cap = self.effective_fak_limit()
@@ -97,6 +120,29 @@ class TraderConfig:
     def fillable_ask_label(self) -> str:
         return f"<= {self.effective_fak_limit():.2f}"
 
+    def when_filter_on(self) -> bool:
+        return when_active(self.hours, self.weekdays, self.sessions)
+
+    def when_ok(self, ts: float | None) -> bool:
+        return passes_when(ts, hours=self.hours, weekdays=self.weekdays, sessions=self.sessions)
+
+    def when_label(self) -> str:
+        return when_label(hours=self.hours, weekdays=self.weekdays, sessions=self.sessions)
+
+    def set_when(self, *, hours: Any = None, weekdays: Any = None, sessions: Any = None) -> None:
+        self.hours = normalize_hours(hours)
+        self.weekdays = normalize_weekdays(weekdays)
+        self.sessions = normalize_sessions(sessions)
+
+    def when_payload(self) -> dict[str, Any]:
+        return {
+            "hours": dump_hours(self.hours),
+            "weekdays": dump_weekdays(self.weekdays),
+            "sessions": dump_sessions(self.sessions),
+            "active": self.when_filter_on(),
+            "label": self.when_label(),
+        }
+
 
 def load_config(path: Path) -> TraderConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -125,3 +171,30 @@ def env(name: str, default: str | None = None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def _toml_array(values: list[Any]) -> str:
+    if not values:
+        return "[]"
+    if all(isinstance(v, str) for v in values):
+        inner = ", ".join('"' + str(v).replace('"', "") + '"' for v in values)
+        return f"[{inner}]"
+    return "[" + ", ".join(str(int(v)) for v in values) + "]"
+
+
+def persist_when(path: Path, cfg: TraderConfig) -> None:
+    """Rewrite hours / weekdays / sessions in config.toml, keep the rest intact."""
+    text = path.read_text(encoding="utf-8")
+    updates = {
+        "hours": _toml_array(dump_hours(cfg.hours)),
+        "weekdays": _toml_array(dump_weekdays(cfg.weekdays)),
+        "sessions": _toml_array(dump_sessions(cfg.sessions)),
+    }
+    for key, value in updates.items():
+        line = f"{key} = {value}"
+        pattern = re.compile(rf"(?m)^{re.escape(key)}\s*=\s*.*$")
+        if pattern.search(text):
+            text = pattern.sub(line, text, count=1)
+        else:
+            text = text.rstrip() + f"\n{line}\n"
+    path.write_text(text, encoding="utf-8")

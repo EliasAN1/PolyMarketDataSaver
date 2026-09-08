@@ -232,7 +232,10 @@
   }
 
   function sourceLabel(source) {
-    if (source === "polymarket") return { text: "Polymarket verified", cls: "verified" };
+    if (source === "polymarket" || source === "gamma") return { text: "Polymarket verified", cls: "verified" };
+    if (source === "clob_live" || source === "clob_rest" || source === "clob") {
+      return { text: "CLOB (same as trader)", cls: "verified" };
+    }
     if (!source) return { text: "unverified", cls: "guessed" };
     return { text: `guessed from ${source}`, cls: "guessed" };
   }

@@ -294,6 +294,60 @@ class Database:
         rows = await cursor.fetchall()
         return [str(row[0]) for row in rows]
 
+    async def load_window_settle(self, slug: str) -> dict[str, Any] | None:
+        assert self._conn is not None
+        cursor = await self._conn.execute(
+            """
+            SELECT id, slug, window_end, up_token_id, down_token_id
+            FROM windows WHERE slug = ?
+            """,
+            (slug,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row[0]),
+            "slug": str(row[1]),
+            "window_end": int(row[2]),
+            "up_token_id": str(row[3] or ""),
+            "down_token_id": str(row[4] or ""),
+        }
+
+    async def infer_clob_outcome(self, window_id: int, window_end: int) -> str | None:
+        from pmdsaver.outcome import (
+            CLOB_RESOLVE_AFTER_MS,
+            CLOB_RESOLVE_BEFORE_MS,
+            infer_outcome_from_odds_row,
+        )
+
+        assert self._conn is not None
+        end_ms = int(window_end) * 1000
+        cursor = await self._conn.execute(
+            """
+            SELECT up_bid, up_ask, up_mid, down_bid, down_ask, down_mid
+            FROM odds_ticks
+            WHERE window_id = ? AND recv_ts_ms BETWEEN ? AND ?
+            ORDER BY recv_ts_ms DESC, id DESC
+            LIMIT 40
+            """,
+            (window_id, end_ms - CLOB_RESOLVE_BEFORE_MS, end_ms + CLOB_RESOLVE_AFTER_MS),
+        )
+        rows = await cursor.fetchall()
+        for row in rows:
+            mapped = {
+                "up_bid": row[0],
+                "up_ask": row[1],
+                "up_mid": row[2],
+                "down_bid": row[3],
+                "down_ask": row[4],
+                "down_mid": row[5],
+            }
+            outcome = infer_outcome_from_odds_row(mapped)
+            if outcome is not None:
+                return outcome
+        return None
+
     async def load_window_ptb(self, slug: str) -> tuple[str | None, str | None]:
         assert self._conn is not None
         cursor = await self._conn.execute(

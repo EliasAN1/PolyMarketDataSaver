@@ -40,6 +40,9 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision
     if snap.window_end - now_s < cfg.min_seconds_left:
         snap.clear_odds_memory()
         return Decision(None, "too_late", None, cap)
+    if not cfg.when_ok(snap.window_start):
+        snap.clear_odds_memory()
+        return Decision(None, "outside_when", None, cap)
     if not round(from_s) <= t <= round(to_s):
         snap.clear_odds_memory()
         return Decision(None, "outside_elapsed", None, cap)

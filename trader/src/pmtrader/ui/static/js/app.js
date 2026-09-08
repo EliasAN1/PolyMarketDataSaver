@@ -21,6 +21,8 @@ const els = {
   heroDelta: document.getElementById("hero-delta"),
   heroSub: document.getElementById("hero-sub"),
   heroSubNet: document.getElementById("hero-sub-net"),
+  heroDayPnl: document.getElementById("hero-day-pnl"),
+  heroDayPnlVal: document.getElementById("hero-day-pnl-val"),
   heroBadge: document.getElementById("hero-badge"),
   statBalance: document.getElementById("stat-balance"),
   statWinRate: document.getElementById("stat-win-rate"),
@@ -103,6 +105,22 @@ function flashResolvedRows(root, fresh) {
   }
 }
 
+function paintDayPnl(s) {
+  const n = s?.todayNet ?? 0;
+  if (els.heroDayPnlVal) {
+    els.heroDayPnlVal.textContent = fmtUsd(n);
+    els.heroDayPnlVal.classList.toggle("up", n >= 0);
+    els.heroDayPnlVal.classList.toggle("down", n < -0.001);
+  }
+  if (els.heroDayPnl) {
+    const record =
+      (s?.todayWins || 0) + (s?.todayLosses || 0) > 0
+        ? `${s.todayWins}W · ${s.todayLosses}L`
+        : "no fills";
+    els.heroDayPnl.title = `UTC day ${record}`;
+  }
+}
+
 function render({ animatePnl = false } = {}) {
   const list = trades();
   const s = computeSummary(list);
@@ -145,6 +163,7 @@ function render({ animatePnl = false } = {}) {
       els.heroNet.className = "hero-net mono";
     }
     if (els.heroSub) els.heroSub.textContent = "0W · 0L · 0 resolved";
+    paintDayPnl({ todayNet: 0, todayWins: 0, todayLosses: 0 });
     if (els.heroSubNet) els.heroSubNet.textContent = "Session Profit";
     if (els.heroBadge) {
       els.heroBadge.textContent = "Standby";
@@ -166,7 +185,8 @@ function render({ animatePnl = false } = {}) {
   const positive = s.netPnl >= 0;
   els.hero?.classList.toggle("is-profit", positive);
   els.hero?.classList.toggle("is-loss", !positive && s.netPnl < -0.001);
-  if (els.greeting) els.greeting.textContent = `${greeting()} · Session P&L`;
+  if (els.greeting) els.greeting.textContent = greeting();
+  paintDayPnl(s);
 
   const netDelta = applyUsd(els.heroNet, "net", s.netPnl, {
     animate: shouldAnimate,

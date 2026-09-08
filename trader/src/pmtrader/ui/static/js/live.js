@@ -1,5 +1,5 @@
 /**
- * Live Trading Radar — Real-time 5m window monitor, 4 core signal pillars,
+ * Live Trading Radar — Real-time 5m window monitor, price cards,
  * progress timeline, and strategy criteria checklist.
  */
 
@@ -86,158 +86,43 @@ function fmtOdds(val) {
   return Number(val).toFixed(2);
 }
 
-const WEEKDAY_CHIPS = [
-  { key: 1, label: "Mon" },
-  { key: 2, label: "Tue" },
-  { key: 3, label: "Wed" },
-  { key: 4, label: "Thu" },
-  { key: 5, label: "Fri" },
-  { key: 6, label: "Sat" },
-  { key: 0, label: "Sun" },
-];
+const CHECKLIST_KEY = "pmtrader-checks-collapsed";
+let checklistWired = false;
 
-function defaultSessions() {
-  return [
-    { key: "tokyo_open", short: "Tokyo", label: "Tokyo open" },
-    { key: "london_open", short: "Lon open", label: "London open" },
-    { key: "wall_open", short: "NY open", label: "Wall St open" },
-    { key: "asia", short: "Asia", label: "Asia" },
-    { key: "london", short: "London", label: "London" },
-    { key: "wall", short: "Wall St", label: "Wall Street" },
-    { key: "overlap", short: "Overlap", label: "London–NY" },
-    { key: "off", short: "Off", label: "Off hours" },
-  ];
+function applyChecklistCollapsed(root, collapsed) {
+  const box = root.getElementById("strategy-checklist");
+  const toggle = root.getElementById("checklist-toggle");
+  if (!box) return;
+  box.classList.toggle("is-collapsed", collapsed);
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
 }
 
-const whenUi = {
-  hours: [],
-  weekdays: [],
-  sessions: [],
-  wired: false,
-  sig: "",
-};
-
-function weekdayKey(value) {
-  if (typeof value === "number") return value;
-  const i = WEEKDAY_CHIPS.findIndex((d) => d.label.toLowerCase() === String(value).slice(0, 3).toLowerCase());
-  return i >= 0 ? WEEKDAY_CHIPS[i].key : Number(value);
-}
-
-function readWhen(data) {
-  const src = data?.when || data?.config || {};
-  return {
-    hours: (src.hours || []).map(Number),
-    weekdays: (src.weekdays || []).map(weekdayKey),
-    sessions: (src.sessions || []).map(String),
-    label: src.label || "All hours",
-    ok: src.ok !== false,
-    catalog: src.catalog || defaultSessions(),
-  };
-}
-
-function toggleList(selected, key, allKeys) {
-  const asStr = (v) => String(v);
-  if (!selected.length) return [key];
-  const has = selected.some((item) => asStr(item) === asStr(key));
-  const next = has ? selected.filter((item) => asStr(item) !== asStr(key)) : [...selected, key];
-  if (!next.length || next.length === allKeys.length) return [];
-  return next;
-}
-
-async function postWhen(hours, weekdays, sessions) {
-  whenUi.hours = hours;
-  whenUi.weekdays = weekdays;
-  whenUi.sessions = sessions;
+function wireChecklistToggle(root) {
+  if (checklistWired) return;
+  const toggle = root.getElementById("checklist-toggle");
+  const box = root.getElementById("strategy-checklist");
+  if (!toggle || !box) return;
+  checklistWired = true;
+  let collapsed = false;
   try {
-    await fetch("/api/when", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hours, weekdays, sessions }),
-    });
+    collapsed = localStorage.getItem(CHECKLIST_KEY) === "1";
   } catch {
-    /* next live poll restores server state */
+    collapsed = false;
   }
-}
-
-function chipClass(on) {
-  return `when-chip${on ? " is-on" : ""}`;
-}
-
-function renderWhenPanel(data, root) {
-  const panel = root.getElementById("when-panel");
-  if (!panel) return;
-  const w = readWhen(data);
-  whenUi.hours = w.hours;
-  whenUi.weekdays = w.weekdays;
-  whenUi.sessions = w.sessions;
-
-  const meta = root.getElementById("when-meta");
-  const reset = root.getElementById("when-reset-all");
-  const active = w.hours.length || w.weekdays.length || w.sessions.length;
-  if (meta) meta.textContent = active ? w.label : "All hours · click to filter";
-  if (reset) reset.hidden = !active;
-
-  const sig = JSON.stringify([w.hours, w.weekdays, w.sessions]);
-  const hoursRoot = root.getElementById("when-hours");
-  if (sig === whenUi.sig && hoursRoot?.childElementCount) {
-    return;
-  }
-  whenUi.sig = sig;
-
-  const hourRoot = root.getElementById("when-hours");
-  if (hourRoot) {
-    hourRoot.innerHTML = Array.from({ length: 24 }, (_, h) => {
-      const on = !w.hours.length || w.hours.includes(h);
-      return `<button type="button" class="${chipClass(on)}" data-when="hours" data-key="${h}">${String(h).padStart(2, "0")}</button>`;
-    }).join("");
-  }
-  const dayRoot = root.getElementById("when-weekdays");
-  if (dayRoot) {
-    dayRoot.innerHTML = WEEKDAY_CHIPS.map((d) => {
-      const on = !w.weekdays.length || w.weekdays.includes(d.key);
-      return `<button type="button" class="${chipClass(on)}" data-when="weekdays" data-key="${d.key}">${d.label}</button>`;
-    }).join("");
-  }
-  const sessRoot = root.getElementById("when-sessions");
-  if (sessRoot) {
-    const catalog = w.catalog.length ? w.catalog : defaultSessions();
-    sessRoot.innerHTML = catalog.map((s) => {
-      const on = !w.sessions.length || w.sessions.includes(s.key);
-      const title = `${s.label || s.short}${s.utc ? ` · ${s.utc}` : ""}${s.local ? ` · ${s.local}` : ""}`;
-      return `<button type="button" class="${chipClass(on)}" data-when="sessions" data-key="${esc(s.key)}" title="${esc(title)}">${esc(s.short || s.label)}</button>`;
-    }).join("");
-  }
-
-  if (!whenUi.wired) {
-    whenUi.wired = true;
-    panel.addEventListener("click", (event) => {
-      const btn = event.target.closest("[data-when]");
-      if (!btn || !panel.contains(btn)) return;
-      const kind = btn.dataset.when;
-      const raw = btn.dataset.key;
-      if (kind === "hours") {
-        whenUi.hours = toggleList(whenUi.hours, Number(raw), Array.from({ length: 24 }, (_, i) => i));
-      } else if (kind === "weekdays") {
-        whenUi.weekdays = toggleList(whenUi.weekdays, Number(raw), WEEKDAY_CHIPS.map((d) => d.key));
-      } else if (kind === "sessions") {
-        const keys = (readWhen({ when: whenUi }).catalog || defaultSessions()).map((s) => s.key);
-        const catalog = [...panel.querySelectorAll("#when-sessions [data-key]")].map((el) => el.dataset.key);
-        whenUi.sessions = toggleList(whenUi.sessions, String(raw), catalog.length ? catalog : keys);
-      }
-      postWhen(whenUi.hours, whenUi.weekdays, whenUi.sessions);
-      whenUi.sig = "";
-      renderWhenPanel({ when: { ...whenUi, label: "Updating…", catalog: w.catalog } }, root);
-    });
-    reset?.addEventListener("click", () => {
-      postWhen([], [], []);
-      whenUi.sig = "";
-      renderWhenPanel({ when: { hours: [], weekdays: [], sessions: [], label: "All hours", catalog: w.catalog } }, root);
-    });
-  }
+  applyChecklistCollapsed(root, collapsed);
+  toggle.addEventListener("click", () => {
+    const next = !box.classList.contains("is-collapsed");
+    applyChecklistCollapsed(root, next);
+    try {
+      localStorage.setItem(CHECKLIST_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  });
 }
 
 export function renderLive(data, root = document) {
-  renderWhenPanel(data, root);
+  wireChecklistToggle(root);
   const radarTimeLeft = root.getElementById("radar-time-left");
   const radarTimeBadge = root.getElementById("radar-time-badge");
   const radarStateTag = root.getElementById("radar-state-tag");
@@ -346,13 +231,13 @@ export function renderLive(data, root = document) {
   const btcSideBadge = root.getElementById("btc-side-badge");
   const btcSub = root.getElementById("pillar-btc-sub");
 
-  if (btcLabelEl) btcLabelEl.textContent = `${venue} vs PTB`;
-  if (btcDeltaEl) {
-    btcDeltaEl.textContent = fmtSignedUsd(data.btc_delta, 1);
-    btcDeltaEl.className = `pillar-value ${data.btc_delta > 0 ? "up" : data.btc_delta < 0 ? "down" : ""}`;
-  }
+  if (btcLabelEl) btcLabelEl.textContent = venue;
   if (btcSpotEl) {
-    btcSpotEl.textContent = data.btc != null ? fmtUsd(data.btc, 2) : "$—";
+    btcSpotEl.textContent = data.btc != null ? fmtUsd(data.btc, 2) : "—";
+  }
+  if (btcDeltaEl) {
+    btcDeltaEl.textContent = data.btc_delta != null ? `${fmtSignedUsd(data.btc_delta, 1)} vs PTB` : "vs PTB";
+    btcDeltaEl.className = `pillar-delta ${data.btc_delta > 0 ? "up" : data.btc_delta < 0 ? "down" : ""}`;
   }
   if (data.btc_delta > 0) {
     setBadge(btcSideBadge, "UP", "is-up");
@@ -396,6 +281,7 @@ export function renderLive(data, root = document) {
   if (oddsRatioFill && data.up_ask != null && data.down_ask != null) {
     const total = (data.up_ask || 0.5) + (data.down_ask || 0.5);
     const upPct = total > 0 ? (data.up_ask / total) * 100 : 50;
+    oddsRatioFill.style.height = `${upPct}%`;
     oddsRatioFill.style.width = `${upPct}%`;
   }
 
@@ -411,14 +297,14 @@ export function renderLive(data, root = document) {
   const twapAgreeBadge = root.getElementById("twap-agree-badge");
   const twapSub = root.getElementById("pillar-twap-sub");
 
-  if (twapDeltaEl) {
-    twapDeltaEl.textContent = fmtSignedUsd(data.twap_delta, 1);
-    twapDeltaEl.className = `pillar-value ${data.twap_delta > 0 ? "up" : data.twap_delta < 0 ? "down" : ""}`;
-  }
   if (twapAbsEl) {
-    twapAbsEl.textContent = data.twap != null ? fmtUsd(data.twap, 2) : "$—";
+    twapAbsEl.textContent = data.twap != null ? fmtUsd(data.twap, 2) : "—";
   }
-  if (twapSub) twapSub.textContent = `Must match ${venue}`;
+  if (twapDeltaEl) {
+    twapDeltaEl.textContent = data.twap_delta != null ? `${fmtSignedUsd(data.twap_delta, 1)} vs PTB` : "vs PTB";
+    twapDeltaEl.className = `pillar-delta ${data.twap_delta > 0 ? "up" : data.twap_delta < 0 ? "down" : ""}`;
+  }
+  if (twapSub) twapSub.textContent = `Must match ${venue} side`;
   if (data.twap_delta == null || data.btc_delta == null) {
     setBadge(twapAgreeBadge, "—", "");
   } else if (

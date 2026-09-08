@@ -14,7 +14,9 @@ export function computeSummary(trades, filterFn = () => true) {
   let maxWinStreak = 0;
   let totalTrades = 0;
   let todayNet = 0;
-  const todayKey = localDateKeyNow();
+  let todayWins = 0;
+  let todayLosses = 0;
+  const todayUtcKey = utcDateKeyNow();
 
   for (const t of trades) {
     if (!filterFn(t)) continue;
@@ -26,10 +28,14 @@ export function computeSummary(trades, filterFn = () => true) {
     resolved++;
     const pnl = tradePnl(t) ?? 0;
     net += pnl;
-
-    if (t.dayKey === todayKey) todayNet += pnl;
-
     const won = effectiveWon(t);
+
+    if (utcDateKeyFromTs(t.windowEnd || t.entryTs) === todayUtcKey) {
+      todayNet += pnl;
+      if (won) todayWins++;
+      else todayLosses++;
+    }
+
     if (won) {
       wins++;
       winStreak++;
@@ -54,6 +60,8 @@ export function computeSummary(trades, filterFn = () => true) {
     winRate,
     netPnl: net,
     todayNet,
+    todayWins,
+    todayLosses,
     maxWinStreak,
     maxLossStreak,
     currentWinStreak: winStreak,
@@ -64,11 +72,21 @@ export function computeSummary(trades, filterFn = () => true) {
   };
 }
 
-function localDateKeyNow() {
+function utcDateKeyFromTs(ts) {
+  if (!ts) return null;
+  const d = new Date(ts * 1000);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function utcDateKeyNow() {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 

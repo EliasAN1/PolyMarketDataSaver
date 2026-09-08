@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=6" />
+  <link rel="stylesheet" href="/styles.css?v=8" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
@@ -88,9 +88,7 @@
           </div>
         </div>
 
-        <!-- 4 Core Pillars Matrix -->
         <div class="pillars-grid" id="radar-pillars">
-          <!-- Pillar 1: Price to Beat -->
           <article class="pillar-card ptb-pillar">
             <div class="pillar-top">
               <span class="pillar-label">Price To Beat</span>
@@ -100,30 +98,42 @@
               <span class="pillar-value mono" id="pillar-ptb-val">—</span>
             </div>
             <div class="pillar-footer">
-              <span class="pillar-sub">Window Baseline</span>
+              <span class="pillar-sub">Window baseline</span>
             </div>
           </article>
 
-          <!-- Pillar 2: Binance vs PTB (btc_source) -->
           <article class="pillar-card btc-pillar" id="pillar-btc-card">
             <div class="pillar-top">
-              <span class="pillar-label" id="pillar-btc-label">Binance vs PTB</span>
+              <span class="pillar-label" id="pillar-btc-label">Binance</span>
               <span class="pillar-badge" id="btc-side-badge">—</span>
             </div>
             <div class="pillar-main">
-              <span class="pillar-value mono" id="pillar-btc-delta">—</span>
-              <span class="pillar-spot-val mono" id="pillar-btc-spot">$—</span>
+              <span class="pillar-value mono" id="pillar-btc-spot">—</span>
+              <span class="pillar-delta mono" id="pillar-btc-delta">—</span>
             </div>
             <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-btc-sub">≤ $50 from PTB</span>
+              <span class="pillar-sub" id="pillar-btc-sub">vs Price To Beat</span>
             </div>
           </article>
 
-          <!-- Pillar 3: Polymarket Odds -->
+          <article class="pillar-card twap-pillar">
+            <div class="pillar-top">
+              <span class="pillar-label">TWAP</span>
+              <span class="pillar-badge" id="twap-agree-badge">—</span>
+            </div>
+            <div class="pillar-main">
+              <span class="pillar-value mono" id="pillar-twap-abs">—</span>
+              <span class="pillar-delta mono" id="pillar-twap-delta">—</span>
+            </div>
+            <div class="pillar-footer">
+              <span class="pillar-sub" id="pillar-twap-sub">Chainlink 60s vs PTB</span>
+            </div>
+          </article>
+
           <article class="pillar-card odds-pillar">
             <div class="pillar-top">
               <span class="pillar-label">Polymarket Odds</span>
-              <span class="pillar-badge" id="odds-band-badge">BAND 0.35–0.35</span>
+              <span class="pillar-badge" id="odds-band-badge">TRIG · FAK</span>
             </div>
             <div class="odds-dual-wrap">
               <div class="odds-side-box up" id="odds-up-box">
@@ -132,7 +142,7 @@
                 <span class="odds-sub mono" id="odds-up-mid">mid —</span>
               </div>
               <div class="odds-ratio-bar">
-                <div class="odds-ratio-fill" id="odds-ratio-fill" style="width: 50%;"></div>
+                <div class="odds-ratio-fill" id="odds-ratio-fill" style="height: 50%;"></div>
               </div>
               <div class="odds-side-box down" id="odds-down-box">
                 <span class="odds-side-label">DOWN</span>
@@ -141,49 +151,19 @@
               </div>
             </div>
           </article>
-
-          <!-- Pillar 4: TWAP vs PTB -->
-          <article class="pillar-card twap-pillar">
-            <div class="pillar-top">
-              <span class="pillar-label">TWAP vs PTB</span>
-              <span class="pillar-badge" id="twap-agree-badge">—</span>
-            </div>
-            <div class="pillar-main">
-              <span class="pillar-value mono" id="pillar-twap-delta">—</span>
-              <span class="pillar-twap-val mono" id="pillar-twap-abs">$—</span>
-            </div>
-            <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-twap-sub">Must match Binance</span>
-            </div>
-          </article>
         </div>
 
-        <section class="when-panel" id="when-panel">
-          <div class="when-head">
-            <span class="when-title">When to trade</span>
-            <span class="when-meta" id="when-meta">All hours · click to filter</span>
-            <button type="button" class="when-reset" id="when-reset-all" hidden>All</button>
-          </div>
-          <div class="when-row">
-            <span class="when-row-label">Days</span>
-            <div class="when-chips" id="when-weekdays"></div>
-          </div>
-          <div class="when-row">
-            <span class="when-row-label">Markets</span>
-            <div class="when-chips" id="when-sessions"></div>
-          </div>
-          <div class="when-row">
-            <span class="when-row-label">Hours</span>
-            <div class="when-chips when-chips-hours" id="when-hours"></div>
-          </div>
-        </section>
-
         <!-- Strategy Checklist Container -->
-        <div class="strategy-checklist-container">
-          <div class="checklist-header">
-            <span class="checklist-title">Strategy Entry Checks</span>
+        <div class="strategy-checklist-container" id="strategy-checklist">
+          <button type="button" class="checklist-header" id="checklist-toggle" aria-expanded="true" aria-controls="radar-checks-grid">
+            <span class="checklist-title-wrap">
+              <svg class="checklist-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
+              <span class="checklist-title">Strategy Entry Checks</span>
+            </span>
             <span class="checklist-summary mono" id="checklist-summary-badge">0 / 8 Passing</span>
-          </div>
+          </button>
           <div class="checks-grid" id="radar-checks-grid">
             <!-- Rendered by live.js -->
           </div>
@@ -195,6 +175,10 @@
         <div class="perf-header">
           <div class="perf-title-group">
             <span class="perf-greeting" id="hero-greeting">Session Overview</span>
+            <span class="hero-day-pnl" id="hero-day-pnl" title="Realized P&amp;L for the current UTC day">
+              <span class="day-pnl-label">Today UTC</span>
+              <span class="day-pnl-val mono" id="hero-day-pnl-val">$0.00</span>
+            </span>
             <span class="hero-badge" id="hero-badge">Standby</span>
           </div>
           <span class="hero-sub mono" id="hero-sub">0W · 0L · 0 resolved</span>
@@ -293,6 +277,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=6"></script>
+  <script type="module" src="/js/app.js?v=8"></script>
 </body>
 </html>

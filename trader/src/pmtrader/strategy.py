@@ -4,6 +4,8 @@
 is one tape row ``t`` of lab_engine.js. The side must *enter* the odds band on
 this very sample (previous sample outside, this one inside), every enabled
 filter must agree on the same sample, and the fill is this sample's ask.
+Venue and TWAP prints older than ``PRICE_STALE_AFTER_S`` are treated as missing
+so a dead socket cannot be paired with a live book.
 """
 
 from __future__ import annotations
@@ -63,7 +65,7 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision
     down = snap.mid_for("down")
     side: Side
     if cfg.use_btc_distance:
-        delta = snap.btc_minus_ptb()
+        delta = snap.btc_minus_ptb(now_s)
         if delta is None:
             return skip("no_btc")
         if not _distance_ok(abs(delta), cfg):
@@ -81,12 +83,12 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision
 
     ask = snap.ask_for(side)
     if cfg.use_twap:
-        twap_delta = snap.twap_minus_ptb()
+        twap_delta = snap.twap_minus_ptb(now_s)
         if twap_delta is None:
             return skip("no_twap", ask)
         if not (twap_delta > 0 if side == "up" else twap_delta < 0):
             return skip("twap_disagree", ask)
-    if cfg.use_venues and snap.venues_on_side(side) < cfg.min_venues:
+    if cfg.use_venues and snap.venues_on_side(side, now_s) < cfg.min_venues:
         return skip("venues", ask)
 
     if ask is None or not 0 < ask < 1:

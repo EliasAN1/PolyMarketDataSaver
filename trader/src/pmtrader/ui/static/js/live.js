@@ -173,6 +173,9 @@ export function renderLive(data, root = document) {
       icon: "pause",
       hint: reason.replaceAll("_", " "),
     }) };
+    if (reason === "no_ptb" && data.ptb_wait) {
+      skip.hint = data.ptb_wait;
+    }
     if (reason === "no_btc" || reason === "btc_out") {
       const v = venueLabel(data.config?.btc_source);
       skip.label = v;

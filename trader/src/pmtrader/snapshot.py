@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import statistics
+import time
 from dataclasses import dataclass, field
 
 VENUE_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot", "binance_futures")
 SPOT_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot")
+# A silent socket keeps its last print forever. Strategy Lab's tape only
+# forward-fills ticks the collector actually received, so a dead Binance
+# feed on the trader must not be mixed with a live CLOB book.
+PRICE_STALE_AFTER_S = 5.0
 
 
 def _f(value: object | None) -> float | None:
@@ -16,6 +21,28 @@ def _f(value: object | None) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _now_s(now_s: float | None) -> float:
+    return time.time() if now_s is None else now_s
+
+
+def _tick_s(tick: dict) -> float:
+    recv = tick.get("recv_ts_ms")
+    if recv is not None:
+        try:
+            return float(recv) / 1000.0
+        except (TypeError, ValueError):
+            pass
+    return time.time()
+
+
+def _fresh(price: float | None, ts: float | None, now_s: float) -> float | None:
+    if price is None or ts is None:
+        return None
+    if now_s - ts > PRICE_STALE_AFTER_S:
+        return None
+    return price
 
 
 @dataclass
@@ -35,6 +62,10 @@ class LiveSnapshot:
     spots: dict[str, float | None] = field(
         default_factory=lambda: {name: None for name in VENUE_SOURCES}
     )
+    spot_ts: dict[str, float | None] = field(
+        default_factory=lambda: {name: None for name in VENUE_SOURCES}
+    )
+    twap_ts: float | None = None
     # Venue whose price stands in for BTC (or "median" of the three spots).
     btc_source: str = "binance_spot"
     # Mids of the previous once-per-second sample, for the Lab's "enter the odds
@@ -66,6 +97,11 @@ class LiveSnapshot:
         self.down_ask = None
         self.up_mid = None
         self.down_mid = None
+        self.twap = None
+        self.twap_ts = None
+        for name in VENUE_SOURCES:
+            self.spots[name] = None
+            self.spot_ts[name] = None
         self.clear_odds_memory()
 
     def set_ptb(self, value: str | float | None, source: str) -> None:
@@ -85,45 +121,65 @@ class LiveSnapshot:
         source = str(tick.get("source") or "")
         if source not in self.spots:
             return
-        self.spots[source] = _f(tick.get("price"))
+        price = _f(tick.get("price"))
+        if price is None:
+            return
+        self.spots[source] = price
+        self.spot_ts[source] = _tick_s(tick)
 
     def apply_twap(self, tick: dict) -> None:
-        self.twap = _f(tick.get("value"))
+        value = _f(tick.get("value"))
+        if value is None:
+            return
+        self.twap = value
+        self.twap_ts = _tick_s(tick)
 
     @property
     def btc(self) -> float | None:
+        return self.btc_at()
+
+    def btc_at(self, now_s: float | None = None) -> float | None:
+        now = _now_s(now_s)
         if self.btc_source != "median":
-            return self.spots.get(self.btc_source)
-        values = [p for name in SPOT_SOURCES if (p := self.spots.get(name)) is not None]
+            return self._fresh_spot(self.btc_source, now)
+        values = [p for name in SPOT_SOURCES if (p := self._fresh_spot(name, now)) is not None]
         if not values:
             return None
         return statistics.median(values)
 
-    def spot_deltas(self) -> dict[str, float]:
+    def twap_at(self, now_s: float | None = None) -> float | None:
+        return _fresh(self.twap, self.twap_ts, _now_s(now_s))
+
+    def spot_deltas(self, now_s: float | None = None) -> dict[str, float]:
         if self.ptb is None:
             return {}
+        now = _now_s(now_s)
         out: dict[str, float] = {}
         for name in VENUE_SOURCES:
-            price = self.spots.get(name)
+            price = self._fresh_spot(name, now)
             if price is not None:
                 out[name] = round(price - self.ptb, 2)
         return out
 
-    def btc_minus_ptb(self) -> float | None:
-        if self.btc is None or self.ptb is None:
+    def btc_minus_ptb(self, now_s: float | None = None) -> float | None:
+        btc = self.btc_at(now_s)
+        if btc is None or self.ptb is None:
             return None
-        return self.btc - self.ptb
+        return btc - self.ptb
 
-    def twap_minus_ptb(self) -> float | None:
-        if self.twap is None or self.ptb is None:
+    def twap_minus_ptb(self, now_s: float | None = None) -> float | None:
+        twap = self.twap_at(now_s)
+        if twap is None or self.ptb is None:
             return None
-        return self.twap - self.ptb
+        return twap - self.ptb
 
-    def venues_on_side(self, side: str) -> int:
+    def venues_on_side(self, side: str, now_s: float | None = None) -> int:
         if self.ptb is None:
             return 0
+        now = _now_s(now_s)
         count = 0
-        for price in self.spots.values():
+        for name in VENUE_SOURCES:
+            price = self._fresh_spot(name, now)
             if price is None:
                 continue
             if side == "up" and price > self.ptb:
@@ -131,6 +187,9 @@ class LiveSnapshot:
             elif side == "down" and price < self.ptb:
                 count += 1
         return count
+
+    def _fresh_spot(self, name: str, now_s: float) -> float | None:
+        return _fresh(self.spots.get(name), self.spot_ts.get(name), now_s)
 
     def ask_for(self, side: str) -> float | None:
         return self.up_ask if side == "up" else self.down_ask

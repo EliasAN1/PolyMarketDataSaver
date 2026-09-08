@@ -11,26 +11,24 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pmtrader.clock import (
-    WINDOW_SECONDS,
     Window,
     current_window,
     next_window,
     window_from_slug,
-    window_from_start,
 )
 from pmtrader.config import TraderConfig, env
-from pmtrader.gamma import GammaClient, MarketInfo, extract_final_price, extract_resolved_outcome
+from pmtrader.gamma import GammaClient, MarketInfo, extract_resolved_outcome
 from pmtrader.orders import OrderClient
 from pmtrader.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, evaluate
 from pmtrader.tradelog import entry_record, resolve_record, unresolved_entries
 from pmtrader.ui.server import serve_background
-from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream, fetch_spot_open_at
+from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream
 from pmtrader.streams.bybit import BybitSpotStream
 from pmtrader.streams.coinbase import CoinbaseSpotStream
 from pmtrader.streams.polymarket_clob import ClobOddsStream
-from pmtrader.streams.polymarket_rtds import PTB_CAPTURE_WINDOW_SECONDS, RtdsTwapStream
+from pmtrader.streams.polymarket_rtds import RtdsTwapStream
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +56,7 @@ class Trader:
     _order_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _traded_slug: str | None = None
     _last_decision: Decision | None = None
+    _gamma_ptb_poll_at: float = 0.0
 
     def __post_init__(self) -> None:
         self.snap.btc_source = self.cfg.btc_source
@@ -140,6 +139,7 @@ class Trader:
 
     async def _ensure_current_market(self) -> None:
         if self.current_market and self.current_market.window.slug == self.current.slug:
+            await self._refresh_ptb_if_missing()
             return
         if self.next_market and self.next_market.window.slug == self.current.slug:
             await self._activate_market(self.next_market)
@@ -185,33 +185,46 @@ class Trader:
             market.down_token_id[:12],
         )
 
+    async def _refresh_ptb_if_missing(self) -> None:
+        """Keep trying RTDS (and Gamma) until a real strike arrives. Never invent one."""
+        if self.snap.ptb is not None or self.current_market is None:
+            return
+        now = time.time()
+        snapped = self.rtds.capture_open_if_fresh(self.current.start, now)
+        if snapped is not None:
+            self.snap.set_ptb(snapped, "rtds")
+            logger.info("PTB %s (rtds snapshot) for %s", snapped, self.current.slug)
+            return
+        ptb, source = await self._resolve_ptb(self.current_market)
+        if ptb is None and now - self._gamma_ptb_poll_at >= 2.0:
+            self._gamma_ptb_poll_at = now
+            gamma_ptb = await self.gamma.fetch_price_to_beat(self.current)
+            if gamma_ptb is not None:
+                ptb, source = gamma_ptb, "gamma"
+        if ptb is None:
+            logger.debug(
+                "Still no PTB for %s (%s)",
+                self.current.slug,
+                self.rtds.wait_reason(self.current.start, now),
+            )
+            return
+        self.snap.set_ptb(ptb, source or "rtds")
+        logger.info("PTB %s (%s) for %s", ptb, source, self.current.slug)
+
     async def _resolve_ptb(self, market: MarketInfo) -> tuple[str | None, str | None]:
-        window = market.window
-        live = self.rtds.price_to_beat_for(window.start)
+        # Same sources Strategy Lab will replay: live RTDS capture, else Gamma.
+        live = self.rtds.price_to_beat_for(market.window.start)
         if live is not None:
             return live, "rtds"
+        snapped = self.rtds.capture_open_if_fresh(market.window.start, time.time())
+        if snapped is not None:
+            return snapped, "rtds"
         if market.price_to_beat_gamma is not None:
             return market.price_to_beat_gamma, "gamma"
-
-        elapsed = WINDOW_SECONDS - window.seconds_remaining
-        if elapsed <= PTB_CAPTURE_WINDOW_SECONDS:
-            return None, None
-
-        prev = window_from_start(window.start - WINDOW_SECONDS)
-        prev_event = await self.gamma.fetch_event(prev, missing_ok=True)
-        final = extract_final_price(prev_event) if prev_event else None
-        if final is not None:
-            self.rtds.seed_price_to_beat(window.start, final)
-            return final, "previous_final"
-
-        open_px = await fetch_spot_open_at(window.start)
-        if open_px is not None:
-            self.rtds.seed_price_to_beat(window.start, open_px)
-            return open_px, "binance_open"
         return None, None
 
     async def _on_ptb(self, window_start: int, value: str) -> None:
-        if self.current.start == window_start:
+        if self.current.start == window_start or self.snap.window_start == window_start:
             self.snap.set_ptb(value, "rtds")
 
     async def _on_odds(self, tick: dict) -> None:
@@ -339,9 +352,10 @@ class Trader:
 
     def _print_status(self) -> None:
         snap = self.snap
-        left = max(0, int(snap.window_end - time.time())) if snap.window_end else 0
-        delta = snap.btc_minus_ptb()
-        twap_d = snap.twap_minus_ptb()
+        now = time.time()
+        left = max(0, int(snap.window_end - now)) if snap.window_end else 0
+        delta = snap.btc_minus_ptb(now)
+        twap_d = snap.twap_minus_ptb(now)
         if self._traded_slug == snap.slug:
             state = "sent"
         elif self._last_decision is None:
@@ -355,7 +369,7 @@ class Trader:
             f"PTB {snap.ptb or '-'}  "
             f"BTC {fmt_delta(delta)}  "
             f"TWAP {fmt_delta(twap_d)}  "
-            f"venues {snap.venues_on_side('up')}/{snap.venues_on_side('down')}  "
+            f"venues {snap.venues_on_side('up', now)}/{snap.venues_on_side('down', now)}  "
             f"UP {fmt_odds(snap.up_ask)}  DOWN {fmt_odds(snap.down_ask)}  "
             f"{state}"
         )

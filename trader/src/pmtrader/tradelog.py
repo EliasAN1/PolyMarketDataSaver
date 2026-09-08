@@ -53,10 +53,10 @@ def entry_record(
         row["dry_run"] = True
     if result.error:
         row["error"] = result.error
-    btc_delta = snap.btc_minus_ptb()
+    btc_delta = snap.btc_minus_ptb(now_s)
     row["btc_minus_ptb"] = round(btc_delta, 2) if btc_delta is not None else None
     row["btc_source"] = snap.btc_source
-    row["spot_deltas"] = snap.spot_deltas()
+    row["spot_deltas"] = snap.spot_deltas(now_s)
     return row
 
 

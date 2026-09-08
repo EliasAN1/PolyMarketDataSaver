@@ -38,8 +38,8 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
     decision: Decision | None = trader._last_decision
     traded = trader._traded_slug == snap.slug
     left = (snap.window_end - now) if snap.window_end else None
-    btc_delta = snap.btc_minus_ptb()
-    twap_delta = snap.twap_minus_ptb()
+    btc_delta = snap.btc_minus_ptb(now)
+    twap_delta = snap.twap_minus_ptb(now)
     side = _implied_side(snap, cfg, btc_delta)
 
     if traded:
@@ -52,6 +52,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         state = f"skip:{decision.reason}"
 
     armed, from_s, to_s = cfg.watch_span_s(_duration(snap))
+    ptb_wait = None if snap.ptb is not None else _ptb_wait_reason(trader, now)
     return {
         "running": True,
         "slug": snap.slug,
@@ -61,17 +62,18 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "side": (decision.side if decision is not None else None) or side,
         "traded": traded,
         "ptb": snap.ptb,
-        "btc": snap.btc,
+        "ptb_wait": ptb_wait,
+        "btc": snap.btc_at(now),
         "btc_delta": btc_delta,
-        "spot_deltas": snap.spot_deltas(),
-        "twap": snap.twap,
+        "spot_deltas": snap.spot_deltas(now),
+        "twap": snap.twap_at(now),
         "twap_delta": twap_delta,
         "up_ask": snap.up_ask,
         "down_ask": snap.down_ask,
         "up_mid": snap.up_mid,
         "down_mid": snap.down_mid,
-        "venues_up": snap.venues_on_side("up"),
-        "venues_down": snap.venues_on_side("down"),
+        "venues_up": snap.venues_on_side("up", now),
+        "venues_down": snap.venues_on_side("down", now),
         "config": {
             "odds_min": cfg.odds_min,
             "odds_max": cfg.odds_max,
@@ -100,7 +102,9 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "ok": cfg.when_ok(snap.window_start or now),
             "catalog": session_catalog(),
         },
-        "checks": _checks(snap, cfg, now_s=now, traded=traded, side=side, decision=decision),
+        "checks": _checks(
+            snap, cfg, now_s=now, traded=traded, side=side, decision=decision, ptb_wait=ptb_wait
+        ),
     }
 
 
@@ -108,6 +112,14 @@ def _duration(snap: LiveSnapshot) -> float:
     if snap.window_end > snap.window_start:
         return float(snap.window_end - snap.window_start)
     return 300.0
+
+
+def _ptb_wait_reason(trader: Any, now_s: float) -> str:
+    rtds = getattr(trader, "rtds", None)
+    start = getattr(trader.snap, "window_start", 0) or 0
+    if rtds is not None and hasattr(rtds, "wait_reason"):
+        return str(rtds.wait_reason(start, now_s))
+    return "waiting for RTDS / Gamma"
 
 
 def _implied_side(snap: LiveSnapshot, cfg: TraderConfig, btc_delta: float | None) -> str | None:
@@ -126,6 +138,7 @@ def _checks(
     traded: bool,
     side: str | None,
     decision: Decision | None,
+    ptb_wait: str | None = None,
 ) -> list[dict[str, Any]]:
     left = (snap.window_end - now_s) if snap.window_end else None
     elapsed = (now_s - snap.window_start) if snap.window_start else None
@@ -136,7 +149,7 @@ def _checks(
         elapsed is not None and from_s <= elapsed <= to_s
     )
     has_ptb = snap.ptb is not None
-    btc_delta = snap.btc_minus_ptb()
+    btc_delta = snap.btc_minus_ptb(now_s)
     abs_d = None if btc_delta is None else abs(btc_delta)
     btc_ok = (not cfg.use_btc_distance) or (
         abs_d is not None
@@ -147,7 +160,7 @@ def _checks(
     mid = snap.mid_for(side) if side else None
     in_ask_band = ask is not None and _ask_fillable(ask, cfg)
     crossed = decision is not None and decision.reason in _PAST_BAND_REASONS
-    twap_delta = snap.twap_minus_ptb()
+    twap_delta = snap.twap_minus_ptb(now_s)
     twap_ok = (
         not cfg.use_twap
         or (
@@ -156,7 +169,7 @@ def _checks(
             and ((side == "up" and twap_delta > 0) or (side == "down" and twap_delta < 0))
         )
     )
-    venues = snap.venues_on_side(side) if side else 0
+    venues = snap.venues_on_side(side, now_s) if side else 0
     venues_ok = (not cfg.use_venues) or venues >= cfg.min_venues
     from_clock = _clock(from_s)
     to_clock = _clock(to_s)
@@ -216,7 +229,7 @@ def _checks(
             "name": "Price To Beat",
             "target": "PTB Baseline",
             "ok": has_ptb,
-            "value": f"${_num(snap.ptb, 2)}" if snap.ptb is not None else "-",
+            "value": f"${_num(snap.ptb, 2)}" if snap.ptb is not None else (ptb_wait or "waiting"),
             "enabled": True,
         },
         {

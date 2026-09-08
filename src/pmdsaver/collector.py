@@ -7,16 +7,16 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from pmdsaver.clock import WINDOW_SECONDS, Window, current_window, next_window, window_from_slug, window_from_start
+from pmdsaver.clock import Window, current_window, next_window, window_from_slug
 from pmdsaver.db import Database, WindowRow
 from pmdsaver.gamma import GammaClient, MarketInfo, extract_final_price, extract_price_to_beat, extract_resolved_outcome
 from pmdsaver.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmdsaver.live_hub import HUB, LiveHub
-from pmdsaver.streams.binance import BinanceFuturesStream, BinanceSpotStream, fetch_spot_open_at
+from pmdsaver.streams.binance import BinanceFuturesStream, BinanceSpotStream
 from pmdsaver.streams.bybit import BybitSpotStream
 from pmdsaver.streams.coinbase import CoinbaseSpotStream
 from pmdsaver.streams.polymarket_clob import ClobOddsStream
-from pmdsaver.streams.polymarket_rtds import PTB_CAPTURE_WINDOW_SECONDS, RtdsTwapStream
+from pmdsaver.streams.polymarket_rtds import RtdsTwapStream
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,9 @@ class Collector:
         live = self.rtds.price_to_beat_for(window.start)
         if live is not None:
             return live, "rtds"
+        snapped = self.rtds.capture_open_if_fresh(window.start, time.time())
+        if snapped is not None:
+            return snapped, "rtds"
         if market.price_to_beat_gamma is not None:
             return market.price_to_beat_gamma, "gamma"
 
@@ -243,24 +246,6 @@ class Collector:
             return stored_rtds, "db"
         if stored_gamma:
             return stored_gamma, "gamma"
-
-        elapsed = WINDOW_SECONDS - window.seconds_remaining
-        if elapsed <= PTB_CAPTURE_WINDOW_SECONDS:
-            return None, None
-
-        prev = window_from_start(window.start - WINDOW_SECONDS)
-        prev_event = await self.gamma.fetch_event(prev, missing_ok=True)
-        final = extract_final_price(prev_event) if prev_event else None
-        if final is not None:
-            self.rtds.seed_price_to_beat(window.start, final)
-            logger.info("PTB from previous window Chainlink close: %s", final)
-            return final, "previous_final"
-
-        open_px = await fetch_spot_open_at(window.start)
-        if open_px is not None:
-            self.rtds.seed_price_to_beat(window.start, open_px)
-            logger.info("PTB from Binance 1m open (late join): %s", open_px)
-            return open_px, "binance_open"
         return None, None
 
     async def _try_settle_window(self, window: Window) -> bool:

@@ -1,6 +1,6 @@
 /** Aggregate stats from real fills only. */
 
-import { tradePnl, effectiveWon, isStatClosed } from "./parse.js";
+import { tradePnl, effectiveWon, isStatClosed } from "./parse.js?v=10";
 
 export function computeSummary(trades, filterFn = () => true) {
   let wins = 0;
@@ -19,7 +19,7 @@ export function computeSummary(trades, filterFn = () => true) {
   const todayUtcKey = utcDateKeyNow();
 
   for (const t of trades) {
-    if (!filterFn(t)) continue;
+    if (!filterFn(t) || t.rejected) continue;
     totalTrades++;
     if (!isStatClosed(t)) {
       open++;

@@ -39,12 +39,18 @@ class GammaClient:
         return parse_event(window, event)
 
     async def fetch_event(self, window: Window, *, missing_ok: bool = False) -> dict[str, Any] | None:
-        response = await self._client.get(f"/events/slug/{window.slug}")
+        try:
+            response = await self._client.get(f"/events/slug/{window.slug}")
+        except httpx.HTTPError as exc:
+            logger.warning("Gamma fetch failed for %s: %s", window.slug, exc)
+            return None
         if response.status_code == 404:
             if not missing_ok:
                 logger.warning("Gamma event not found yet for slug %s", window.slug)
             return None
-        response.raise_for_status()
+        if response.status_code >= 400:
+            logger.warning("Gamma HTTP %s for %s", response.status_code, window.slug)
+            return None
         payload = response.json()
         return payload if isinstance(payload, dict) else None
 

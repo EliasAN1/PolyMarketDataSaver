@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import Any
 
+from pmtrader.clock import current_window
 from pmtrader.config import TraderConfig
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, _ask_fillable
@@ -37,12 +38,21 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
     # evaluate() here would mutate it from the UI thread.
     decision: Decision | None = trader._last_decision
     traded = trader._traded_slug == snap.slug
+    order = _order_for_window(trader, snap.slug)
     left = (snap.window_end - now) if snap.window_end else None
     btc_delta = snap.btc_minus_ptb(now)
     twap_delta = snap.twap_minus_ptb(now)
     side = _implied_side(snap, cfg, btc_delta)
 
-    if traded:
+    clock = current_window()
+    expired = bool(snap.window_end and now >= snap.window_end)
+    stale = expired and bool(snap.slug) and snap.slug != "-" and snap.slug != clock.slug
+
+    if stale:
+        state = "rolling"
+    elif traded and order is not None and not order.get("ok"):
+        state = "failed"
+    elif traded:
         state = "sent"
     elif decision is None:
         state = "waiting"
@@ -57,10 +67,13 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "running": True,
         "slug": snap.slug,
         "seconds_left": max(0, int(left)) if left is not None else None,
+        "expired": expired,
+        "stale": stale,
         "elapsed_s": max(0, int(now - snap.window_start)) if snap.window_start else None,
         "state": state,
-        "side": (decision.side if decision is not None else None) or side,
+        "side": (decision.side if decision is not None else None) or (order.get("side") if order else None) or side,
         "traded": traded,
+        "order": order,
         "ptb": snap.ptb,
         "ptb_wait": ptb_wait,
         "btc": snap.btc_at(now),
@@ -103,8 +116,24 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "catalog": session_catalog(),
         },
         "checks": _checks(
-            snap, cfg, now_s=now, traded=traded, side=side, decision=decision, ptb_wait=ptb_wait
+            snap, cfg, now_s=now, traded=traded, side=side, decision=decision, ptb_wait=ptb_wait, order=order
         ),
+    }
+
+
+def _order_for_window(trader: Any, slug: str | None) -> dict[str, Any] | None:
+    order = getattr(trader, "_last_order", None)
+    if not isinstance(order, dict):
+        return None
+    if slug and order.get("slug") and order.get("slug") != slug:
+        return None
+    return {
+        "ok": bool(order.get("ok")),
+        "side": order.get("side"),
+        "limit": order.get("limit"),
+        "dry_run": bool(order.get("dry_run")),
+        "error": order.get("error"),
+        "error_short": order.get("error_short"),
     }
 
 
@@ -139,6 +168,7 @@ def _checks(
     side: str | None,
     decision: Decision | None,
     ptb_wait: str | None = None,
+    order: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     left = (snap.window_end - now_s) if snap.window_end else None
     elapsed = (now_s - snap.window_start) if snap.window_start else None
@@ -277,10 +307,22 @@ def _checks(
             "name": "Window Order Lock",
             "target": "1 per 5m",
             "ok": not traded,
-            "value": "Sent" if traded else "Ready",
+            "value": _once_value(traded, order),
             "enabled": True,
         },
     ]
+
+
+def _once_value(traded: bool, order: dict[str, Any] | None) -> str:
+    if not traded:
+        return "Ready"
+    if order and not order.get("ok"):
+        short = str(order.get("error_short") or "rejected")
+        side = str(order.get("side") or "").upper()
+        return f"Failed: {side} {short}".strip()
+    if order and order.get("side"):
+        return f"Sent {str(order['side']).upper()}"
+    return "Sent"
 
 
 def _clock(seconds: float) -> str:

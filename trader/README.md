@@ -16,6 +16,8 @@ copy .env.example .env
 
 Edit `.env` with the **Polymarket proxy / funder** address that holds **pUSD**, and the private key that can sign for it. Approve the CLOB exchange on polymarket.com before going live. Deposit-wallet accounts usually need `POLYMARKET_SIGNATURE_TYPE=3` and API creds filled in by hand.
 
+**Ubuntu / AWS EC2:** full clone → `.env` → systemd walkthrough is in [EC2.md](EC2.md).
+
 ## Config
 
 [`config.toml`](config.toml) knobs match **Strategy Lab** (AND together; volume is not streamed in the trader):

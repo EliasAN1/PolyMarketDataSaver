@@ -1,6 +1,13 @@
-import { fmtUsd } from "./stats.js";
-import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, fmtSide } from "./format.js";
-import { tradePnl, effectiveWon, isStatClosed } from "./parse.js";
+import { fmtUsd } from "./stats.js?v=10";
+import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, fmtSide } from "./format.js?v=10";
+import { tradePnl, effectiveWon, isStatClosed } from "./parse.js?v=10";
+
+function attrEsc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;");
+}
 
 const COLUMNS = [
   { key: "entryTs", label: "Time", fmt: (t) => fmtTs(t.entryTs) },
@@ -70,13 +77,22 @@ export function renderTradesTable(trades, root = document) {
         const sideLower = (t.side || "up").toLowerCase();
         td.innerHTML = `<span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span>`;
       } else if (col.customOutcome) {
-        const closed = isStatClosed(t);
-        const won = effectiveWon(t);
-        const label = !closed ? "OPEN" : won ? "WON" : "LOST";
-        const cls = !closed ? "open" : won ? "won" : "lost";
-        td.innerHTML = `<span class="badge-outcome ${cls}">${label}</span>`;
+        if (t.rejected) {
+          const why = t.errorShort || "rejected";
+          td.innerHTML = `<span class="badge-outcome failed" title="${attrEsc(t.error || why)}">FAILED</span>`;
+        } else {
+          const closed = isStatClosed(t);
+          const won = effectiveWon(t);
+          const label = !closed ? "OPEN" : won ? "WON" : "LOST";
+          const cls = !closed ? "open" : won ? "won" : "lost";
+          td.innerHTML = `<span class="badge-outcome ${cls}">${label}</span>`;
+        }
       } else if (col.customPnl) {
-        if (!t.resolved) {
+        if (t.rejected) {
+          td.textContent = t.errorShort || "rejected";
+          td.title = t.error || t.errorShort || "Order rejected";
+          td.classList.add("down");
+        } else if (!t.resolved) {
           td.innerHTML = `<span class="badge-outcome open">OPEN</span>`;
         } else {
           const pnl = tradePnl(t);
@@ -104,10 +120,10 @@ export function renderTradesTable(trades, root = document) {
         const sideLower = (t.side || "up").toLowerCase();
         const closed = isStatClosed(t);
         const won = effectiveWon(t);
-        const outcomeTag = !closed ? "OPEN" : won ? "WON" : "LOST";
-        const outcomeCls = !closed ? "open" : won ? "won" : "lost";
+        const outcomeTag = t.rejected ? "FAILED" : !closed ? "OPEN" : won ? "WON" : "LOST";
+        const outcomeCls = t.rejected ? "failed" : !closed ? "open" : won ? "won" : "lost";
         const pnl = tradePnl(t);
-        const pnlText = !t.resolved ? "open" : pnlAtStake(t);
+        const pnlText = t.rejected ? (t.errorShort || "rejected") : !t.resolved ? "open" : pnlAtStake(t);
         const pnlTone = pnl != null ? (pnl >= 0 ? "up" : "down") : "";
         const time = fmtTs(t.entryTs);
         const fillPrice = fmtOdds(t.fillPrice);

@@ -22,14 +22,16 @@ def main() -> None:
     load_dotenv(args.env)
 
     client = None
+    orders = None
     try:
         orders = OrderClient(dry_run=False, tick_size="0.01", log_path=args.log_file)
         orders.connect()
         client = orders.client
     except SystemExit:
         client = None
+        orders = None
 
-    app = create_app(log_path=args.log_file, order_client=client)
+    app = create_app(log_path=args.log_file, order_client=client, orders=orders)
     uvicorn.run(app, host=args.host, port=args.port)
 
 

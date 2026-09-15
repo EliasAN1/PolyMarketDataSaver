@@ -1,4 +1,4 @@
-"""python -m pmtrader [--dry-run] [--config path]."""
+"""python -m pmtrader [--dry-run] | python -m pmtrader close-positions."""
 
 from __future__ import annotations
 
@@ -15,6 +15,9 @@ from pmtrader.runner import Trader
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "close-positions":
+        raise SystemExit(_close_positions_main(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(description="Polymarket BTC 5m CLOB trader")
     parser.add_argument(
         "--config",
@@ -75,6 +78,40 @@ def main() -> None:
         loop.run_until_complete(trader.shutdown())
     finally:
         loop.close()
+
+
+def _close_positions_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m pmtrader close-positions",
+        description="Redeem settled positions and FAK-sell anything still open",
+    )
+    parser.add_argument("--env", type=Path, default=Path(".env"))
+    parser.add_argument("--log-file", type=Path, default=Path("logs/trades.jsonl"))
+    parser.add_argument("--scan-only", action="store_true", help="List the close queue without executing")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be redeemed/sold; do not post",
+    )
+    args = parser.parse_args(argv)
+
+    load_dotenv(args.env)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stderr,
+    )
+
+    from pmtrader.close import run_close_cycle
+
+    orders: OrderClient | None = None
+    if not args.scan_only:
+        orders = OrderClient(dry_run=args.dry_run, tick_size="0.01", log_path=args.log_file)
+        if not args.dry_run:
+            orders.connect()
+    report = run_close_cycle(orders=orders, dry_run=args.dry_run, scan_only=args.scan_only)
+    return 1 if report.failed else 0
 
 
 if __name__ == "__main__":

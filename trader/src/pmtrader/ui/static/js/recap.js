@@ -1,6 +1,6 @@
-import { fmtUsd } from "./stats.js";
-import { fmtTs, slugLabel, slugUrl, fmtOdds } from "./format.js";
-import { effectiveWon, isStatClosed, tradePnl } from "./parse.js";
+import { fmtUsd } from "./stats.js?v=10";
+import { fmtTs, slugLabel, slugUrl, fmtOdds } from "./format.js?v=10";
+import { effectiveWon, isStatClosed, tradePnl } from "./parse.js?v=10";
 
 export function computeRecap(trades, filterFn = () => true) {
   const list = trades.filter(filterFn);
@@ -76,17 +76,20 @@ export function renderRecapHtml(recap) {
       const side = (t.side ?? "up").toUpperCase();
       const closed = isStatClosed(t);
       const won = effectiveWon(t);
-      const outcomeText = !closed ? "OPEN" : won ? "WON" : "LOST";
-      const outcomeCls = !closed ? "open" : won ? "win" : "loss";
-      const outcomeBadge = !closed ? "OPEN" : won ? "WIN" : "LOSS";
+      const outcomeCls = t.rejected ? "fail" : !closed ? "open" : won ? "win" : "loss";
+      const outcomeBadge = t.rejected ? "FAIL" : !closed ? "OPEN" : won ? "WIN" : "LOSS";
       const time = fmtTs(t.entryTs);
       const market = slugLabel(t.slug);
       const href = t.slug ? slugUrl(t.slug) : "#";
       const pnlVal = tradePnl(t);
-      const pnlFormatted = closed ? fmtUsd(pnlVal) : "In Progress";
-      const pnlCls = pnlVal != null ? (pnlVal >= 0 ? "up" : "down") : "";
+      const pnlFormatted = t.rejected
+        ? (t.errorShort || "rejected")
+        : closed
+          ? fmtUsd(pnlVal)
+          : "In Progress";
+      const pnlCls = t.rejected ? "down" : pnlVal != null ? (pnlVal >= 0 ? "up" : "down") : "";
       const fill = fmtOdds(t.fillPrice);
-      const leftSec = !closed ? remainingSeconds(t.windowEnd) : null;
+      const leftSec = !t.rejected && !closed ? remainingSeconds(t.windowEnd) : null;
       const timeHtml =
         leftSec != null
           ? `<span class="trade-time-sub" data-window-end="${t.windowEnd}">${fmtLeft(leftSec)} left</span>`

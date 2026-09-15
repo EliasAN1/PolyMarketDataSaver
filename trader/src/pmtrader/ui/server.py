@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from pmtrader.config import env
 from pmtrader.live import live_payload
@@ -20,13 +22,27 @@ from pmtrader.tradelog import analyzer_records
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+_close_lock = threading.Lock()
 
 
-def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any | None = None) -> FastAPI:
+class ClosePositionsBody(BaseModel):
+    confirm: bool = False
+    scan_only: bool = False
+    dry_run: bool = False
+
+
+def create_app(
+    *,
+    log_path: Path,
+    order_client: Any | None = None,
+    trader: Any | None = None,
+    orders: Any | None = None,
+) -> FastAPI:
     app = FastAPI(title="pmtrader")
     app.state.log_path = log_path
     app.state.order_client = order_client
     app.state.trader = trader
+    app.state.orders = orders
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -119,6 +135,8 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
                     "stake_usd": row.get("stake_usd"),
                     "net_pnl_usd": row.get("net_pnl_usd"),
                     "dry_run": bool(row.get("dry_run")),
+                    "error": row.get("error"),
+                    "error_short": row.get("error_short"),
                 }
             )
         live = live_payload(app.state.trader)
@@ -132,6 +150,7 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
                     "side": live.get("side"),
                     "seconds_left": live.get("seconds_left"),
                     "elapsed_s": live.get("elapsed_s"),
+                    "order": live.get("order"),
                 },
             }
         )
@@ -139,6 +158,39 @@ def create_app(*, log_path: Path, order_client: Any | None = None, trader: Any |
     @app.get("/api/profile")
     def api_profile() -> JSONResponse:
         return JSONResponse(collect_profile(app.state.order_client))
+
+    @app.post("/api/close-positions")
+    def api_close_positions(body: ClosePositionsBody) -> JSONResponse:
+        if not body.scan_only and not body.confirm and not body.dry_run:
+            return JSONResponse(
+                {"error": "confirm=true is required to redeem/sell"},
+                status_code=400,
+            )
+        if not _close_lock.acquire(blocking=False):
+            return JSONResponse({"error": "a close-positions run is already in progress"}, status_code=409)
+        try:
+            from pmtrader.close import run_close_cycle
+            from pmtrader.orders import OrderClient
+
+            order_box = app.state.orders
+            if order_box is None and app.state.order_client is not None:
+                order_box = OrderClient(
+                    dry_run=body.dry_run,
+                    tick_size="0.01",
+                    log_path=app.state.log_path,
+                )
+                order_box._client = app.state.order_client
+            report = run_close_cycle(
+                orders=order_box,
+                dry_run=body.dry_run,
+                scan_only=body.scan_only,
+            )
+            return JSONResponse(report.as_dict())
+        except Exception as exc:
+            logger.exception("close-positions failed")
+            return JSONResponse({"error": str(exc)}, status_code=500)
+        finally:
+            _close_lock.release()
 
     app.mount("/js", StaticFiles(directory=STATIC_DIR / "js"), name="js")
     return app
@@ -151,11 +203,11 @@ def serve_background(
     host: str,
     port: int,
     trader: Any | None = None,
+    orders: Any | None = None,
 ) -> None:
-    import threading
     import uvicorn
 
-    app = create_app(log_path=log_path, order_client=order_client, trader=trader)
+    app = create_app(log_path=log_path, order_client=order_client, trader=trader, orders=orders)
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="pmtrader-ui", daemon=True)

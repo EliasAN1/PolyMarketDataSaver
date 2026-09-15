@@ -1,12 +1,16 @@
-"""Compact JSONL: one entry per fill, one resolve per settle."""
+"""Compact JSONL: one entry per fill, one reject per failed FAK, one resolve per settle."""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from pmtrader.fees import taker_fee
+from pmtrader.orders import describe_clob_error
+
+_ORDER_ID_RE = re.compile(r"0x[0-9a-fA-F]{16,}")
 
 
 def parse_fill(response: dict[str, Any] | None, *, limit: float, stake_usd: float) -> tuple[str, float, float]:
@@ -60,6 +64,53 @@ def entry_record(
     return row
 
 
+def reject_record(
+    *,
+    snap: Any,
+    side: str,
+    limit: float,
+    stake_usd: float,
+    result: Any,
+    now_s: float,
+) -> dict[str, Any]:
+    short, detail = describe_clob_error(result.error)
+    order_id = _reject_order_id(result, snap.slug, now_s)
+    row: dict[str, Any] = {
+        "event": "reject",
+        "order_id": order_id,
+        "slug": snap.slug,
+        "side": side,
+        "ts": int(now_s),
+        "window_end_ts": int(snap.window_end),
+        "stake_usd": stake_usd,
+        "limit": limit,
+        "fill_price": None,
+        "fill_shares": 0,
+        "fee_usd": 0,
+        "ok": False,
+        "error": detail,
+        "error_short": short,
+    }
+    if result.dry_run:
+        row["dry_run"] = True
+    btc_delta = snap.btc_minus_ptb(now_s)
+    row["btc_minus_ptb"] = round(btc_delta, 2) if btc_delta is not None else None
+    row["btc_source"] = snap.btc_source
+    row["spot_deltas"] = snap.spot_deltas(now_s)
+    return row
+
+
+def _reject_order_id(result: Any, slug: str, now_s: float) -> str:
+    resp = result.response if isinstance(getattr(result, "response", None), dict) else {}
+    order_id = str(resp.get("orderID") or resp.get("order_id") or resp.get("id") or "")
+    if order_id:
+        return order_id
+    match = _ORDER_ID_RE.search(str(getattr(result, "error", "") or ""))
+    if match:
+        return match.group(0)
+    return f"{slug}:reject:{int(now_s)}"
+
+
 def resolve_record(entry: dict[str, Any], *, outcome: str, now_s: float) -> dict[str, Any]:
     side = str(entry.get("side") or "")
     won = outcome == side
@@ -107,7 +158,7 @@ def analyzer_records(path: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in read_records(path):
         ev = row.get("event")
-        if ev in {"entry", "resolve"}:
+        if ev in {"entry", "resolve", "reject"}:
             out.append(row)
             continue
         if ev == "order" and row.get("ok"):
@@ -121,7 +172,12 @@ def unresolved_entries(path: Path) -> list[dict[str, Any]]:
     return [
         r
         for r in records
-        if r.get("event") == "entry" and r.get("order_id") and r.get("order_id") not in resolved
+        if (
+            r.get("event") == "entry"
+            and not r.get("error")
+            and r.get("order_id")
+            and r.get("order_id") not in resolved
+        )
     ]
 
 

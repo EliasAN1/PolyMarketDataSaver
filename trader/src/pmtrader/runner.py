@@ -18,11 +18,11 @@ from pmtrader.clock import (
 )
 from pmtrader.config import TraderConfig, env
 from pmtrader.gamma import GammaClient, MarketInfo, extract_resolved_outcome
-from pmtrader.orders import OrderClient
+from pmtrader.orders import OrderClient, describe_clob_error
 from pmtrader.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, evaluate
-from pmtrader.tradelog import entry_record, resolve_record, unresolved_entries
+from pmtrader.tradelog import entry_record, reject_record, resolve_record, unresolved_entries
 from pmtrader.ui.server import serve_background
 from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream
 from pmtrader.streams.bybit import BybitSpotStream
@@ -56,6 +56,7 @@ class Trader:
     _order_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _traded_slug: str | None = None
     _last_decision: Decision | None = None
+    _last_order: dict | None = None
     _gamma_ptb_poll_at: float = 0.0
 
     def __post_init__(self) -> None:
@@ -77,6 +78,7 @@ class Trader:
             host=ui_host,
             port=ui_port,
             trader=self,
+            orders=self.orders,
         )
         logger.info("UI http://%s:%s", ui_host, ui_port)
         self.rtds.start()
@@ -121,21 +123,47 @@ class Trader:
 
     async def _window_loop(self) -> None:
         while not self._stop.is_set():
-            now_window = current_window()
-            if now_window.slug != self.current.slug:
-                self.current = now_window
-                self._traded_slug = None
-                self._last_decision = None
-                if self.next_market is not None and self.next_market.window.slug == now_window.slug:
-                    await self._activate_market(self.next_market)
-                    self.next_market = None
-                else:
-                    self.current_market = None
-
-            await self._ensure_current_market()
-            if self.current.seconds_remaining <= ROLLOVER_LEAD_SECONDS:
-                await self._prefetch_next_market()
+            try:
+                await self._tick_windows()
+            except Exception:
+                logger.exception("window loop failed; will retry")
             await asyncio.sleep(MARKET_POLL_SECONDS if self.current_market is None else 1.0)
+
+    async def _tick_windows(self) -> None:
+        now_window = current_window()
+        if now_window.slug != self.current.slug:
+            await self._roll_to(now_window)
+        await self._ensure_current_market()
+        if self.current.seconds_remaining <= ROLLOVER_LEAD_SECONDS:
+            try:
+                await self._prefetch_next_market()
+            except Exception:
+                logger.exception("prefetch next market failed")
+
+    async def _roll_to(self, now_window: Window) -> None:
+        logger.info("Rolling %s -> %s", self.current.slug, now_window.slug)
+        self.current = now_window
+        self._traded_slug = None
+        self._last_decision = None
+        self._last_order = None
+        # Leave the dead window immediately so the UI cannot sit on 0:00 / SENT
+        # if Gamma or CLOB then throws while activating the next market.
+        if self.snap.slug != now_window.slug:
+            self.snap.reset_window(
+                slug=now_window.slug,
+                window_start=now_window.start,
+                window_end=now_window.end,
+                up_token_id="",
+                down_token_id="",
+                ptb=None,
+                ptb_source=None,
+            )
+        if self.next_market is not None and self.next_market.window.slug == now_window.slug:
+            market = self.next_market
+            self.next_market = None
+            await self._activate_market(market)
+        else:
+            self.current_market = None
 
     async def _ensure_current_market(self) -> None:
         if self.current_market and self.current_market.window.slug == self.current.slug:
@@ -228,6 +256,8 @@ class Trader:
             self.snap.set_ptb(value, "rtds")
 
     async def _on_odds(self, tick: dict) -> None:
+        if not self.snap.up_token_id:
+            return
         self.snap.apply_odds(tick)
 
     async def _on_price(self, tick: dict) -> None:
@@ -271,6 +301,17 @@ class Trader:
                 limit=decision.limit,
                 stake_usd=self.cfg.stake_usd,
             )
+            short, detail = describe_clob_error(result.error)
+            self._last_order = {
+                "slug": self.snap.slug,
+                "side": decision.side,
+                "ok": result.ok,
+                "dry_run": result.dry_run,
+                "limit": result.limit,
+                "error": None if result.ok else detail,
+                "error_short": None if result.ok else short,
+            }
+            now = time.time()
             if result.ok:
                 self.orders.append_log(
                     entry_record(
@@ -279,10 +320,20 @@ class Trader:
                         limit=decision.limit,
                         stake_usd=self.cfg.stake_usd,
                         result=result,
-                        now_s=time.time(),
+                        now_s=now,
                     )
                 )
             else:
+                self.orders.append_log(
+                    reject_record(
+                        snap=self.snap,
+                        side=decision.side,
+                        limit=decision.limit,
+                        stake_usd=self.cfg.stake_usd,
+                        result=result,
+                        now_s=now,
+                    )
+                )
                 logger.error("Order failed %s %s: %s", self.snap.slug, decision.side, result.error)
 
     async def _settle_loop(self) -> None:
@@ -356,7 +407,10 @@ class Trader:
         left = max(0, int(snap.window_end - now)) if snap.window_end else 0
         delta = snap.btc_minus_ptb(now)
         twap_d = snap.twap_minus_ptb(now)
-        if self._traded_slug == snap.slug:
+        order = self._last_order
+        if self._traded_slug == snap.slug and order and not order.get("ok"):
+            state = f"fail:{order.get('error_short') or 'rejected'}"
+        elif self._traded_slug == snap.slug:
             state = "sent"
         elif self._last_decision is None:
             state = "wait"

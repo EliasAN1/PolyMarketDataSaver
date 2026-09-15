@@ -1,5 +1,5 @@
-import { fmtUsd } from "./stats.js";
-import { tradePnl } from "./parse.js";
+import { fmtUsd } from "./stats.js?v=10";
+import { tradePnl } from "./parse.js?v=10";
 
 export function fmtTs(ts) {
   if (!ts) return "—";
@@ -59,6 +59,7 @@ export function fmtFill(t) {
 }
 
 export function outcomeLabel(t) {
+  if (t.rejected) return "failed";
   if (!t.resolved) return "open";
   if (t.won === true) return "won";
   if (t.won === false) return "lost";

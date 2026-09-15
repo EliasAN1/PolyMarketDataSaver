@@ -9,14 +9,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=8" />
+  <link rel="stylesheet" href="/styles.css?v=20" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
-    <!-- Top Navigation Header -->
     <header class="top-nav">
-      <div class="brand-group">
-        <div class="brand-logo">
+      <div class="brand-group" id="nav-live" title="Connecting">
+        <div class="brand-logo" aria-hidden="true">
           <span class="radar-ping"></span>
           <span class="radar-dot"></span>
         </div>
@@ -26,257 +25,261 @@
       </div>
 
       <div class="header-status-group">
-        <div class="nav-chip balance-chip" id="nav-balance-chip" title="Collateral Balance">
+        <div class="nav-chip balance-chip" id="nav-balance-chip" title="Collateral balance">
           <span class="chip-label">Cash</span>
           <span class="chip-val mono" id="nav-balance-val">—</span>
         </div>
-        <div class="nav-chip live-state-chip" id="nav-live-chip">
-          <span class="pulse-dot"></span>
-          <span class="chip-text" id="nav-live-status">CONNECTING</span>
+        <div class="nav-chip day-pnl-chip" id="nav-day-pnl" title="Realized P&amp;L for the current UTC day">
+          <span class="chip-label">Today</span>
+          <span class="chip-val mono" id="nav-day-pnl-val">$0.00</span>
         </div>
-      </div>
-
-      <div class="nav-actions">
-        <button type="button" id="profile-btn" class="nav-btn profile-btn" aria-label="Wallet Profile">
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-          <span class="btn-text">Wallet</span>
-        </button>
-        <button type="button" id="refresh-btn" class="nav-btn icon-only-btn" aria-label="Refresh data">
-          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
-        </button>
       </div>
     </header>
 
     <main class="main-content">
-      <!-- Live Trading Radar Section -->
-      <section class="radar-card" id="radar-section">
-        <div class="radar-header">
-          <div class="section-tag">
-            <span class="tag-pulse"></span>
-            LIVE WINDOW
-          </div>
-          <div class="radar-countdown-wrap">
-            <div class="countdown-badge" id="radar-time-badge">
-              <svg class="countdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              <span id="radar-time-left" class="mono">—</span>
+      <section class="tab-pane is-active" data-tab="live" id="live-pane">
+        <section class="radar-card" id="radar-section">
+          <div class="radar-header">
+            <div class="section-tag">
+              <span class="tag-pulse"></span>
+              LIVE WINDOW
             </div>
-            <div class="window-state-tag" id="radar-state-tag">Idle</div>
-          </div>
-        </div>
-
-        <!-- Progress Timeline -->
-        <div class="window-timeline">
-          <div class="timeline-track">
-            <div class="timeline-span-zone" id="timeline-watch-zone" style="left: 0%; width: 100%;"></div>
-            <div class="timeline-progress" id="timeline-progress-bar" style="width: 0%;"></div>
-            <div class="timeline-cursor" id="timeline-cursor" style="left: 0%;"></div>
-          </div>
-          <div class="timeline-labels">
-            <span>0:00 Open</span>
-            <span id="timeline-mid-label" class="mono">Watch: 0:00–1:00</span>
-            <span>5:00 Close</span>
-          </div>
-        </div>
-
-        <div class="pillars-grid" id="radar-pillars">
-          <article class="pillar-card ptb-pillar">
-            <div class="pillar-top">
-              <span class="pillar-label">Price To Beat</span>
-              <span class="pillar-badge" id="ptb-source-badge">CHAINLINK 60S</span>
-            </div>
-            <div class="pillar-main">
-              <span class="pillar-value mono" id="pillar-ptb-val">—</span>
-            </div>
-            <div class="pillar-footer">
-              <span class="pillar-sub">Window baseline</span>
-            </div>
-          </article>
-
-          <article class="pillar-card btc-pillar" id="pillar-btc-card">
-            <div class="pillar-top">
-              <span class="pillar-label" id="pillar-btc-label">Binance</span>
-              <span class="pillar-badge" id="btc-side-badge">—</span>
-            </div>
-            <div class="pillar-main">
-              <span class="pillar-value mono" id="pillar-btc-spot">—</span>
-              <span class="pillar-delta mono" id="pillar-btc-delta">—</span>
-            </div>
-            <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-btc-sub">vs Price To Beat</span>
-            </div>
-          </article>
-
-          <article class="pillar-card twap-pillar">
-            <div class="pillar-top">
-              <span class="pillar-label">TWAP</span>
-              <span class="pillar-badge" id="twap-agree-badge">—</span>
-            </div>
-            <div class="pillar-main">
-              <span class="pillar-value mono" id="pillar-twap-abs">—</span>
-              <span class="pillar-delta mono" id="pillar-twap-delta">—</span>
-            </div>
-            <div class="pillar-footer">
-              <span class="pillar-sub" id="pillar-twap-sub">Chainlink 60s vs PTB</span>
-            </div>
-          </article>
-
-          <article class="pillar-card odds-pillar">
-            <div class="pillar-top">
-              <span class="pillar-label">Polymarket Odds</span>
-              <span class="pillar-badge" id="odds-band-badge">TRIG · FAK</span>
-            </div>
-            <div class="odds-dual-wrap">
-              <div class="odds-side-box up" id="odds-up-box">
-                <span class="odds-side-label">UP</span>
-                <span class="odds-val mono" id="odds-up-val">—</span>
-                <span class="odds-sub mono" id="odds-up-mid">mid —</span>
+            <div class="radar-countdown-wrap">
+              <div class="countdown-badge" id="radar-time-badge">
+                <svg class="countdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                <span id="radar-time-left" class="mono">—</span>
               </div>
-              <div class="odds-ratio-bar">
-                <div class="odds-ratio-fill" id="odds-ratio-fill" style="height: 50%;"></div>
-              </div>
-              <div class="odds-side-box down" id="odds-down-box">
-                <span class="odds-side-label">DOWN</span>
-                <span class="odds-val mono" id="odds-down-val">—</span>
-                <span class="odds-sub mono" id="odds-down-mid">mid —</span>
-              </div>
+              <div class="window-state-tag" id="radar-state-tag">Idle</div>
             </div>
-          </article>
-        </div>
-
-        <!-- Strategy Checklist Container -->
-        <div class="strategy-checklist-container" id="strategy-checklist">
-          <button type="button" class="checklist-header" id="checklist-toggle" aria-expanded="true" aria-controls="radar-checks-grid">
-            <span class="checklist-title-wrap">
-              <svg class="checklist-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="6 9 12 15 18 9"></polyline>
-              </svg>
-              <span class="checklist-title">Strategy Entry Checks</span>
-            </span>
-            <span class="checklist-summary mono" id="checklist-summary-badge">0 / 8 Passing</span>
-          </button>
-          <div class="checks-grid" id="radar-checks-grid">
-            <!-- Rendered by live.js -->
           </div>
-        </div>
+          <p class="radar-order-note" id="radar-order-note" hidden></p>
+
+          <div class="window-timeline">
+            <div class="timeline-track">
+              <div class="timeline-span-zone" id="timeline-watch-zone" style="left: 0%; width: 100%;"></div>
+              <div class="timeline-progress" id="timeline-progress-bar" style="width: 0%;"></div>
+              <div class="timeline-cursor" id="timeline-cursor" style="left: 0%;"></div>
+            </div>
+            <div class="timeline-labels">
+              <span>0:00 Open</span>
+              <span id="timeline-mid-label" class="mono">Watch: 0:00–1:00</span>
+              <span>5:00 Close</span>
+            </div>
+          </div>
+
+          <div class="pillars-grid" id="radar-pillars">
+            <article class="pillar-card ptb-pillar">
+              <div class="pillar-top">
+                <span class="pillar-label">Price To Beat</span>
+                <span class="pillar-badge" id="ptb-source-badge">CHAINLINK 60S</span>
+              </div>
+              <div class="pillar-main">
+                <span class="pillar-value mono" id="pillar-ptb-val">—</span>
+              </div>
+              <div class="pillar-footer">
+                <span class="pillar-sub">Window baseline</span>
+              </div>
+            </article>
+
+            <article class="pillar-card btc-pillar" id="pillar-btc-card">
+              <div class="pillar-top">
+                <span class="pillar-label" id="pillar-btc-label">Binance</span>
+                <span class="pillar-badge" id="btc-side-badge">—</span>
+              </div>
+              <div class="pillar-main">
+                <span class="pillar-value mono" id="pillar-btc-spot">—</span>
+                <span class="pillar-delta mono" id="pillar-btc-delta">—</span>
+              </div>
+              <div class="pillar-footer">
+                <span class="pillar-sub" id="pillar-btc-sub">vs Price To Beat</span>
+              </div>
+            </article>
+
+            <article class="pillar-card twap-pillar">
+              <div class="pillar-top">
+                <span class="pillar-label">TWAP</span>
+                <span class="pillar-badge" id="twap-agree-badge">—</span>
+              </div>
+              <div class="pillar-main">
+                <span class="pillar-value mono" id="pillar-twap-abs">—</span>
+                <span class="pillar-delta mono" id="pillar-twap-delta">—</span>
+              </div>
+              <div class="pillar-footer">
+                <span class="pillar-sub" id="pillar-twap-sub">Chainlink 60s vs PTB</span>
+              </div>
+            </article>
+
+            <article class="pillar-card odds-pillar">
+              <div class="pillar-top">
+                <span class="pillar-label">Polymarket Odds</span>
+                <span class="pillar-badge" id="odds-band-badge">TRIG · FAK</span>
+              </div>
+              <div class="odds-dual-wrap">
+                <div class="odds-side-box up" id="odds-up-box">
+                  <span class="odds-side-label">UP</span>
+                  <span class="odds-val mono" id="odds-up-val">—</span>
+                  <span class="odds-sub mono" id="odds-up-mid">mid —</span>
+                </div>
+                <div class="odds-ratio-bar">
+                  <div class="odds-ratio-fill" id="odds-ratio-fill" style="height: 50%;"></div>
+                </div>
+                <div class="odds-side-box down" id="odds-down-box">
+                  <span class="odds-side-label">DOWN</span>
+                  <span class="odds-val mono" id="odds-down-val">—</span>
+                  <span class="odds-sub mono" id="odds-down-mid">mid —</span>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="strategy-checklist-container" id="strategy-checklist">
+            <button type="button" class="checklist-header" id="checklist-toggle" aria-expanded="true" aria-controls="radar-checks-grid">
+              <span class="checklist-title-wrap">
+                <svg class="checklist-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+                <span class="checklist-title">Strategy Entry Checks</span>
+              </span>
+              <span class="checklist-summary mono" id="checklist-summary-badge">0 / 8 Passing</span>
+            </button>
+            <div class="checks-grid" id="radar-checks-grid"></div>
+          </div>
+        </section>
       </section>
 
-      <!-- Performance Summary Hero -->
-      <section class="performance-card" id="performance-section">
-        <div class="perf-header">
-          <div class="perf-title-group">
-            <span class="perf-greeting" id="hero-greeting">Session Overview</span>
-            <span class="hero-day-pnl" id="hero-day-pnl" title="Realized P&amp;L for the current UTC day">
-              <span class="day-pnl-label">Today UTC</span>
-              <span class="day-pnl-val mono" id="hero-day-pnl-val">$0.00</span>
-            </span>
-            <span class="hero-badge" id="hero-badge">Standby</span>
-          </div>
-          <span class="hero-sub mono" id="hero-sub">0W · 0L · 0 resolved</span>
-        </div>
-
-        <div class="perf-tiles-grid">
-          <!-- Tile 1: Realized Net P&L (Primary) -->
-          <div class="perf-tile primary-tile">
-            <span class="tile-label">Realized Net P&L</span>
-            <div class="tile-val-wrap">
-              <h1 class="hero-net mono" id="hero-net">$0.00</h1>
-              <span class="hero-delta mono" id="hero-delta" hidden></span>
+      <section class="tab-pane" data-tab="stats" id="stats-pane" hidden>
+        <section class="performance-card" id="performance-section">
+          <div class="perf-header">
+            <div class="perf-title-group">
+              <span class="perf-greeting" id="hero-greeting">Session Overview</span>
+              <span class="hero-day-pnl" id="hero-day-pnl" title="Realized P&amp;L for the current UTC day">
+                <span class="day-pnl-label">Today UTC</span>
+                <span class="day-pnl-val mono" id="hero-day-pnl-val">$0.00</span>
+              </span>
+              <span class="hero-badge" id="hero-badge">Standby</span>
             </div>
-            <span class="tile-sub" id="hero-sub-net">Session Profit</span>
+            <span class="hero-sub mono" id="hero-sub">0W · 0L · 0 resolved</span>
           </div>
 
-          <!-- Tile 2: Cash Balance -->
-          <div class="perf-tile">
-            <span class="tile-label">Wallet Collateral</span>
-            <strong class="tile-val mono" id="stat-balance">—</strong>
-            <span class="tile-sub">pUSD Cash</span>
+          <div class="perf-tiles-grid">
+            <div class="perf-tile primary-tile">
+              <span class="tile-label">Realized Net P&L</span>
+              <div class="tile-val-wrap">
+                <h1 class="hero-net mono" id="hero-net">$0.00</h1>
+                <span class="hero-delta mono" id="hero-delta" hidden></span>
+              </div>
+              <span class="tile-sub" id="hero-sub-net">Session Profit</span>
+            </div>
+            <div class="perf-tile">
+              <span class="tile-label">Wallet Collateral</span>
+              <strong class="tile-val mono" id="stat-balance">—</strong>
+              <span class="tile-sub">pUSD Cash</span>
+            </div>
+            <div class="perf-tile">
+              <span class="tile-label">Win Rate</span>
+              <strong class="tile-val mono" id="stat-win-rate">—</strong>
+              <span class="tile-sub" id="stat-win-count">0 wins</span>
+            </div>
+            <div class="perf-tile">
+              <span class="tile-label">Active Streak</span>
+              <strong class="tile-val mono" id="stat-streak">—</strong>
+              <span class="tile-sub" id="stat-streak-sub">Session</span>
+            </div>
           </div>
-
-          <!-- Tile 3: Win Rate -->
-          <div class="perf-tile">
-            <span class="tile-label">Win Rate</span>
-            <strong class="tile-val mono" id="stat-win-rate">—</strong>
-            <span class="tile-sub" id="stat-win-count">0 wins</span>
+        </section>
+        <section class="equity-card" aria-label="Equity curve">
+          <div class="section-title-bar">
+            <h3 class="section-heading">Equity</h3>
+            <span class="section-subtext">Closed fills, cumulative net</span>
           </div>
-
-          <!-- Tile 4: Current Streak -->
-          <div class="perf-tile">
-            <span class="tile-label">Active Streak</span>
-            <strong class="tile-val mono" id="stat-streak">—</strong>
-            <span class="tile-sub" id="stat-streak-sub">Session</span>
-          </div>
-        </div>
+          <div id="equity-chart" class="equity-mount"></div>
+          <p class="chart-empty" id="equity-empty">No resolved fills yet.</p>
+        </section>
       </section>
 
-      <!-- Recent Executions Carousel / Stream -->
-      <section class="recent-feed-section" id="recap-section" aria-label="Recent Executions" hidden>
+      <section class="tab-pane" data-tab="days" id="days-pane" hidden>
         <div class="section-title-bar">
-          <h3 class="section-heading">Recent Executions</h3>
-          <span class="section-subtext">Last 5 Market Fills</span>
+          <h3 class="section-heading">Days</h3>
+          <span class="section-subtext">Month → day → hour</span>
         </div>
-        <div id="recap-inner"></div>
+        <div id="days-root" class="days-root"></div>
       </section>
 
-      <!-- Comprehensive Trades History Table -->
-      <section class="trades-block" id="trades-section" hidden>
-        <div class="trades-head">
-          <div class="trades-title-wrap">
-            <h3 class="section-heading">Trade Executions</h3>
-            <span class="trades-count mono" id="trades-count">0 trades</span>
+      <section class="tab-pane" data-tab="trades" id="trades-pane" hidden>
+        <section class="recent-feed-section" id="recap-section" aria-label="Recent Executions" hidden>
+          <div class="section-title-bar">
+            <h3 class="section-heading">Recent Executions</h3>
+            <span class="section-subtext">Last 5 Market Fills</span>
           </div>
+          <div id="recap-inner"></div>
+        </section>
+
+        <section class="trades-block" id="trades-section" hidden>
+          <div class="trades-head">
+            <div class="trades-title-wrap">
+              <h3 class="section-heading">Trade Executions</h3>
+              <span class="trades-count mono" id="trades-count">0 trades</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table id="trades-table" class="data-table trades-table">
+              <thead id="trades-thead"></thead>
+              <tbody id="trades-tbody"></tbody>
+            </table>
+          </div>
+          <div class="mobile-trades-list" id="mobile-trades-list"></div>
+        </section>
+
+        <div id="empty-state" class="empty-state-card" hidden>
+          <div class="empty-icon">⚡</div>
+          <h3>No Trade Executions Yet</h3>
+          <p>The bot is actively monitoring 5m windows. When all strategy criteria align, FAK orders will execute and appear here in real time.</p>
         </div>
-        <div class="table-container">
-          <table id="trades-table" class="data-table trades-table">
-            <thead id="trades-thead"></thead>
-            <tbody id="trades-tbody"></tbody>
-          </table>
-        </div>
-        <!-- Mobile Card View Container -->
-        <div class="mobile-trades-list" id="mobile-trades-list"></div>
       </section>
 
-      <!-- Empty State -->
-      <div id="empty-state" class="empty-state-card" hidden>
-        <div class="empty-icon">⚡</div>
-        <h3>No Trade Executions Yet</h3>
-        <p>The bot is actively monitoring 5m windows. When all strategy criteria align, FAK orders will execute and appear here in real time.</p>
-      </div>
-    </main>
-  </div>
-
-  <!-- Glass Profile / Wallet Drawer Modal -->
-  <div id="profile-overlay" class="profile-overlay" hidden>
-    <div class="profile-drawer" role="dialog" aria-labelledby="profile-title">
-      <header class="drawer-head">
-        <div class="drawer-title-group">
-          <h2 id="profile-title" class="drawer-title">Wallet & Account</h2>
-          <p id="profile-status" class="drawer-subtitle">Loading account details…</p>
-        </div>
-        <div class="drawer-actions">
+      <section class="tab-pane" data-tab="wallet" id="wallet-pane" hidden>
+        <div class="wallet-head">
+          <div>
+            <h3 class="section-heading" id="profile-title">Wallet &amp; Account</h3>
+            <p id="profile-status" class="drawer-subtitle">Open this tab to load the account.</p>
+          </div>
           <button type="button" id="profile-refresh" class="drawer-btn" aria-label="Refresh profile">
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           </button>
-          <button type="button" id="profile-close" class="drawer-btn close-btn" aria-label="Close modal">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
         </div>
-      </header>
-      <div id="profile-body" class="drawer-body">
-        <!-- Rendered by profile.js -->
-      </div>
-    </div>
+        <div id="profile-body" class="wallet-body"></div>
+      </section>
+    </main>
   </div>
 
-  <script type="module" src="/js/app.js?v=8"></script>
+  <nav class="tab-bar" aria-label="Primary">
+    <div class="tab-bar-inner" role="tablist">
+      <button type="button" class="tab-btn is-active" data-tab="live" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        <span>Live</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="stats" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+        <span>Stats</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="days" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <span>Days</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="trades" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        <span>Trades</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="wallet" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+        <span>Wallet</span>
+      </button>
+    </div>
+  </nav>
+
+  <script type="module" src="/js/app.js?v=18"></script>
 </body>
 </html>

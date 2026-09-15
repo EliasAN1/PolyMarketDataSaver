@@ -28,6 +28,13 @@ SESSIONS: tuple[dict[str, Any], ...] = (
 )
 SESSION_KEYS = {row["key"] for row in SESSIONS}
 SESSION_BY_KEY = {row["key"]: row for row in SESSIONS}
+SESSION_ALIASES = {
+    "tokyo": "tokyo_open",
+    "ny": "wall",
+    "nyc": "wall",
+    "wall_street": "wall",
+    "wallstreet": "wall",
+}
 
 
 def clock_utc(mins: int) -> str:
@@ -113,7 +120,8 @@ def normalize_sessions(value: Any) -> tuple[str, ...] | None:
     out: list[str] = []
     seen: set[str] = set()
     for item in value:
-        key = str(item).strip()
+        key = str(item).strip().lower().replace(" ", "_")
+        key = SESSION_ALIASES.get(key, key)
         if key not in SESSION_KEYS or key in seen:
             continue
         seen.add(key)

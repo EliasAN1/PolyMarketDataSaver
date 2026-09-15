@@ -75,6 +75,7 @@ export function takerFee(shares, price, rate = CRYPTO_TAKER_FEE_RATE) {
 
 /** Dollars won/lost on this fill, after crypto taker fee. */
 export function tradePnl(t) {
+  if (t.rejected) return null;
   if (t.cashedOut) return cashoutPnlUsd(t);
   if (!t.resolved) return null;
   const shares = Number(t.fillShares);
@@ -98,6 +99,7 @@ export function effectiveNormPnl(t) {
 }
 
 export function effectiveWon(t) {
+  if (t.rejected) return null;
   if (t.resolved && t.won != null) return t.won;
   if (t.cashedOut) {
     const pnl = cashoutPnlUsd(t);
@@ -108,6 +110,7 @@ export function effectiveWon(t) {
 
 /** Closed for stats: resolved at expiry or cashed out early. */
 export function isStatClosed(t) {
+  if (t.rejected) return false;
   return (t.resolved && t.won != null) || t.cashedOut;
 }
 
@@ -180,7 +183,7 @@ export function buildTrades(records) {
     const ev = r.event;
     if (ev === "skip") continue;
 
-    if (ev === "entry") {
+    if (ev === "entry" || ev === "reject") {
       const oid = r.order_id;
       if (!oid) continue;
       if (!entries.has(oid)) {
@@ -260,8 +263,9 @@ export function buildTrades(records) {
       ? (flipBuy?.side ?? rv?.side ?? entrySide)
       : (rv?.side ?? entrySide);
 
-    const fillPrice = num(e.fill_price);
-    const fillShares = num(e.fill_shares);
+    const rejected = e.event === "reject" || e.ok === false;
+    const fillPrice = rejected ? num(e.limit ?? e.fill_price) : num(e.fill_price);
+    const fillShares = rejected ? 0 : num(e.fill_shares);
     const fillCost = fillPrice != null && fillShares != null ? fillPrice * fillShares : null;
     const requested = num(e.stake_usd) ?? num(e.requested_stake_usd);
     const stake = fillCost > 0 ? fillCost : requested > 0 ? requested : 1;
@@ -293,8 +297,11 @@ export function buildTrades(records) {
       windowEnd,
       secLeft,
       triggerAsk: e.trigger_ask,
-      fillPrice: e.fill_price,
-      fillShares: e.fill_shares,
+      fillPrice: rejected ? (e.limit ?? e.fill_price) : e.fill_price,
+      fillShares: rejected ? 0 : e.fill_shares,
+      rejected,
+      error: e.error || null,
+      errorShort: e.error_short || null,
       stake,
       feeUsd: e.fee_usd ?? (fillPrice != null && fillShares != null ? takerFee(fillShares, fillPrice) : null),
       upAsk,

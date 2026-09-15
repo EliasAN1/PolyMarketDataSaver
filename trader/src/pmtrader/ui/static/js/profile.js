@@ -123,6 +123,16 @@ function renderProfile(data) {
     </div>
 
     <section class="profile-card">
+      <h3>Close Positions</h3>
+      <p class="profile-hint">Redeems settled winners through the relayer and FAK-sells anything still open, including the current 5m window.</p>
+      <div class="profile-close-row">
+        <button type="button" class="profile-close-btn" data-close-scan>Scan queue</button>
+        <button type="button" class="profile-close-btn" data-close-run>Redeem &amp; sell all</button>
+      </div>
+      <p class="profile-close-status" data-close-status></p>
+    </section>
+
+    <section class="profile-card">
       <h3>Account & Authorization</h3>
       <dl class="profile-kv">
         <dt>Funder</dt><dd title="${esc(data.wallet)}">${esc(shortAddr(data.wallet))}</dd>
@@ -169,7 +179,7 @@ function renderProfile(data) {
 
     <section class="profile-card">
       <h3>Unredeemed Leftovers</h3>
-      ${leftover.length ? `<p class="profile-hint">Settled tokens still on the wallet (current price $0). Redeem on Polymarket if they pay out.</p>` : ""}
+      ${leftover.length ? `<p class="profile-hint">Settled tokens still on the wallet. Use Close Positions above, or redeem on Polymarket.</p>` : ""}
       ${table(
         ["Market", "Side", "Shares", "Cost"],
         leftover.slice(0, 20).map((p) => [
@@ -227,44 +237,76 @@ function renderProfile(data) {
   `;
 }
 
+function closeSummary(data) {
+  if (data.error) return data.error;
+  const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+  const preview = jobs.slice(0, 12).map((j) => j.summary).filter(Boolean);
+  const extra = jobs.length > 12 ? `\n… and ${jobs.length - 12} more` : "";
+  const queued = data.scan_only || data.dry_run;
+  const counts = queued
+    ? `queue: ${data.redeemed ?? 0} redeem · ${data.sold ?? 0} sell · ${data.skipped ?? 0} skip`
+    : `redeemed ${data.redeemed ?? 0} · sold ${data.sold ?? 0} · skipped ${data.skipped ?? 0} · failed ${data.failed ?? 0}`;
+  const head = data.scan_only ? "Scan" : data.dry_run ? "Dry-run" : "Closed";
+  return `${head}: ${jobs.length} jobs\n${counts}${preview.length ? `\n${preview.join("\n")}${extra}` : ""}`;
+}
+
 export function initProfile() {
-  const overlay = document.getElementById("profile-overlay");
+  const refreshBtn = document.getElementById("profile-refresh");
+  refreshBtn?.addEventListener("click", () => loadProfile({ force: true }));
+}
+
+export async function loadProfile({ force = false } = {}) {
   const body = document.getElementById("profile-body");
   const status = document.getElementById("profile-status");
-  const openBtn = document.getElementById("profile-btn");
-  const closeBtn = document.getElementById("profile-close");
-  const refreshBtn = document.getElementById("profile-refresh");
-  if (!overlay || !openBtn) return;
+  if (!body) return;
+  if (body.dataset.loaded === "1" && !force) return;
 
-  async function load() {
-    status.textContent = "Loading account details…";
+  if (status) status.textContent = "Loading account details…";
+  try {
+    const res = await fetch("/api/profile", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    body.innerHTML = renderProfile(data);
+    body.dataset.loaded = "1";
+    bindClose(body);
+    if (status) status.textContent = data.wallet ? `Connected: ${shortAddr(data.wallet)}` : "No wallet configured";
+  } catch (err) {
+    if (status) status.textContent = "Could not load profile.";
+    body.innerHTML = `<p class="profile-error">${esc(err)}</p>`;
+    body.dataset.loaded = "";
+  }
+}
+
+function bindClose(body) {
+  async function postClose({ scanOnly, confirm }) {
+    const note = body.querySelector("[data-close-status]");
+    const buttons = body.querySelectorAll("[data-close-scan], [data-close-run]");
+    buttons.forEach((btn) => { btn.disabled = true; });
+    if (note) note.textContent = scanOnly ? "Scanning wallet…" : "Closing positions…";
     try {
-      const res = await fetch("/api/profile", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch("/api/close-positions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scan_only: scanOnly, confirm, dry_run: false }),
+      });
       const data = await res.json();
-      body.innerHTML = renderProfile(data);
-      status.textContent = data.wallet ? `Connected: ${shortAddr(data.wallet)}` : "No wallet configured";
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (note) note.textContent = closeSummary(data);
     } catch (err) {
-      status.textContent = "Could not load profile.";
-      body.innerHTML = `<p class="profile-error">${esc(err)}</p>`;
+      if (note) note.textContent = String(err.message || err);
+    } finally {
+      buttons.forEach((btn) => { btn.disabled = false; });
     }
   }
 
-  function open() {
-    overlay.hidden = false;
-    load();
-  }
-  function close() {
-    overlay.hidden = true;
-  }
-
-  openBtn.addEventListener("click", open);
-  closeBtn?.addEventListener("click", close);
-  refreshBtn?.addEventListener("click", load);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
+  body.querySelector("[data-close-scan]")?.addEventListener("click", () => {
+    postClose({ scanOnly: true, confirm: false });
   });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !overlay.hidden) close();
+  body.querySelector("[data-close-run]")?.addEventListener("click", () => {
+    const ok = window.confirm(
+      "Redeem settled positions and FAK-sell everything still open, including the current 5m window?"
+    );
+    if (!ok) return;
+    postClose({ scanOnly: false, confirm: true });
   });
 }

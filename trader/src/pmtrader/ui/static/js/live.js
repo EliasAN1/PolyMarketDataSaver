@@ -20,6 +20,7 @@ const ICONS = {
   power: '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/>',
   check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
   trend: '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
   percent: '<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
@@ -59,6 +60,34 @@ function setBadge(el, text, cls) {
   if (!el) return;
   el.textContent = text;
   el.className = `pillar-badge ${cls || ""}`.trim();
+}
+
+function orderNote(data) {
+  const order = data?.order;
+  if (!order) return "";
+  const side = String(order.side || "").toUpperCase();
+  const lim = order.limit != null && !Number.isNaN(Number(order.limit))
+    ? ` @ ${Number(order.limit).toFixed(2)}`
+    : "";
+  if (order.ok) {
+    return `${side} FAK sent${lim}`.trim();
+  }
+  const detail = order.error || order.error_short || "rejected";
+  return `${side} FAK failed${lim} — ${detail}`.trim();
+}
+
+function setOrderNote(el, data, traded) {
+  if (!el) return;
+  const text = traded ? orderNote(data) : "";
+  if (!text) {
+    el.hidden = true;
+    el.textContent = "";
+    el.className = "radar-order-note";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = text;
+  el.className = `radar-order-note ${data?.order?.ok ? "is-ok" : "is-fail"}`;
 }
 
 function setStateTag(el, { cls, label, icon, hint }) {
@@ -121,22 +150,25 @@ function wireChecklistToggle(root) {
   });
 }
 
+function paintBrandLive(root, { cls = "", title = "Live" } = {}) {
+  const brand = root.getElementById("nav-live");
+  if (!brand) return;
+  brand.classList.remove("is-offline", "is-waiting", "is-failed");
+  if (cls) brand.classList.add(cls);
+  brand.title = title;
+}
+
 export function renderLive(data, root = document) {
   wireChecklistToggle(root);
   const radarTimeLeft = root.getElementById("radar-time-left");
   const radarTimeBadge = root.getElementById("radar-time-badge");
   const radarStateTag = root.getElementById("radar-state-tag");
-  const navLiveChip = root.getElementById("nav-live-chip");
-  const navLiveStatus = root.getElementById("nav-live-status");
 
-  // If trader offline
   if (!data?.running) {
     if (radarTimeLeft) radarTimeLeft.textContent = "—";
     setStateTag(radarStateTag, { label: "Off", icon: "power", hint: "Trader offline" });
-    if (navLiveChip) {
-      navLiveChip.className = "nav-chip live-state-chip is-offline";
-    }
-    if (navLiveStatus) navLiveStatus.textContent = "OFFLINE";
+    setOrderNote(root.getElementById("radar-order-note"), null, false);
+    paintBrandLive(root, { cls: "is-offline", title: "Offline" });
     return;
   }
 
@@ -157,15 +189,36 @@ export function renderLive(data, root = document) {
     radarTimeBadge.classList.toggle("is-urgent", secondsLeft <= 30 && secondsLeft > 0);
   }
 
-  let navStatusText = "LIVE";
-  let navCls = "nav-chip live-state-chip";
+  let brandLive = { cls: "", title: "Live" };
 
-  if (traded) {
-    setStateTag(radarStateTag, { cls: "state-sent", label: "Sent", icon: "send", hint: "Order sent" });
-    navStatusText = "SENT";
+  if (state === "rolling" || data.stale) {
+    setStateTag(radarStateTag, {
+      cls: "state-skip",
+      label: "Rolling",
+      icon: "clock",
+      hint: "Window ended — waiting for the next 5m market",
+    });
+    brandLive = { cls: "is-waiting", title: "Rolling" };
+  } else if (traded && (state === "failed" || data.order?.ok === false)) {
+    const short = data.order?.error_short || "Failed";
+    setStateTag(radarStateTag, {
+      cls: "state-failed",
+      label: short,
+      icon: "alert",
+      hint: orderNote(data) || "Order rejected",
+    });
+    brandLive = { cls: "is-failed", title: short };
+  } else if (traded) {
+    setStateTag(radarStateTag, {
+      cls: "state-sent",
+      label: "Sent",
+      icon: "send",
+      hint: orderNote(data) || "Order sent",
+    });
+    brandLive = { cls: "", title: "Sent" };
   } else if (state === "ready") {
     setStateTag(radarStateTag, { cls: "state-ready", label: "Ready", icon: "check", hint: "Trigger ready" });
-    navStatusText = "READY";
+    brandLive = { cls: "", title: "Ready" };
   } else if (state.startsWith("skip:")) {
     const reason = state.slice(5);
     const skip = { ...(SKIP_STATUS[reason] || {
@@ -182,18 +235,14 @@ export function renderLive(data, root = document) {
       skip.hint = reason === "no_btc" ? `No ${v} feed` : `${v} distance out of range`;
     }
     setStateTag(radarStateTag, { cls: "state-skip", ...skip });
-    navStatusText = "WAITING";
-    navCls += " is-waiting";
+    brandLive = { cls: "is-waiting", title: skip.hint || "Waiting" };
   } else {
     setStateTag(radarStateTag, { label: "Idle", icon: "pause", hint: "Standby" });
+    brandLive = { cls: "", title: "Live" };
   }
 
-  if (navLiveChip) {
-    navLiveChip.className = navCls;
-  }
-  if (navLiveStatus) {
-    navLiveStatus.textContent = navStatusText;
-  }
+  setOrderNote(root.getElementById("radar-order-note"), data, traded);
+  paintBrandLive(root, brandLive);
 
   // 2. Window Timeline Progress
   const pct = Math.min(100, Math.max(0, (elapsed / duration) * 100));

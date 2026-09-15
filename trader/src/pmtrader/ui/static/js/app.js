@@ -1,12 +1,15 @@
-import { buildTrades, tradePnl, effectiveWon, isStatClosed } from "./parse.js";
-import { computeSummary, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js";
+import { buildTrades, tradePnl, effectiveWon, isStatClosed } from "./parse.js?v=17";
+import { computeSummary, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js?v=17";
 import { loadFromServer, loadBalanceFromServer } from "./load.js";
-import { renderTradesTable, bindTradesTableSort } from "./trades-table.js";
-import { computeRecap, renderRecapHtml, startRecapCountdown } from "./recap.js";
+import { renderTradesTable, bindTradesTableSort } from "./trades-table.js?v=17";
+import { computeRecap, renderRecapHtml, startRecapCountdown } from "./recap.js?v=17";
 import { startAutoRefresh } from "./refresh.js";
 import { currentUsd, tweenUsd, flashDelta, pulseEl } from "./animate.js";
-import { initProfile } from "./profile.js";
-import { startLivePoll } from "./live.js";
+import { initProfile, loadProfile } from "./profile.js?v=17";
+import { startLivePoll } from "./live.js?v=18";
+import { mountEquityChart } from "./equity.js?v=17";
+import { initTabs } from "./tabs.js?v=17";
+import { initCalendar, renderCalendar } from "./calendar.js?v=17";
 
 const state = {
   records: [],
@@ -30,7 +33,8 @@ const els = {
   statStreak: document.getElementById("stat-streak"),
   statStreakSub: document.getElementById("stat-streak-sub"),
   navBalanceVal: document.getElementById("nav-balance-val"),
-  refreshBtn: document.getElementById("refresh-btn"),
+  navDayPnl: document.getElementById("nav-day-pnl"),
+  navDayPnlVal: document.getElementById("nav-day-pnl-val"),
   emptyState: document.getElementById("empty-state"),
   hero: document.getElementById("performance-section"),
   tradesSection: document.getElementById("trades-section"),
@@ -43,8 +47,6 @@ function trades() {
 }
 
 function setLoading(loading) {
-  els.refreshBtn?.toggleAttribute("disabled", loading);
-  els.refreshBtn?.classList.toggle("is-loading", loading);
   els.shell?.classList.toggle("is-loading", loading && !state.loaded);
 }
 
@@ -107,18 +109,18 @@ function flashResolvedRows(root, fresh) {
 
 function paintDayPnl(s) {
   const n = s?.todayNet ?? 0;
-  if (els.heroDayPnlVal) {
-    els.heroDayPnlVal.textContent = fmtUsd(n);
-    els.heroDayPnlVal.classList.toggle("up", n >= 0);
-    els.heroDayPnlVal.classList.toggle("down", n < -0.001);
+  const record =
+    (s?.todayWins || 0) + (s?.todayLosses || 0) > 0
+      ? `${s.todayWins}W · ${s.todayLosses}L`
+      : "no fills";
+  for (const el of [els.heroDayPnlVal, els.navDayPnlVal]) {
+    if (!el) continue;
+    el.textContent = fmtUsd(n);
+    el.classList.toggle("up", n >= 0);
+    el.classList.toggle("down", n < -0.001);
   }
-  if (els.heroDayPnl) {
-    const record =
-      (s?.todayWins || 0) + (s?.todayLosses || 0) > 0
-        ? `${s.todayWins}W · ${s.todayLosses}L`
-        : "no fills";
-    els.heroDayPnl.title = `UTC day ${record}`;
-  }
+  if (els.heroDayPnl) els.heroDayPnl.title = `UTC day ${record}`;
+  if (els.navDayPnl) els.navDayPnl.title = `UTC day ${record}`;
 }
 
 function render({ animatePnl = false } = {}) {
@@ -174,6 +176,8 @@ function render({ animatePnl = false } = {}) {
     if (els.statStreak) els.statStreak.textContent = "—";
     if (els.statStreakSub) els.statStreakSub.textContent = "Session";
     displayed.net = displayed.last5 = null;
+    paintEquity([]);
+    renderCalendar([]);
     return;
   }
 
@@ -235,6 +239,9 @@ function render({ animatePnl = false } = {}) {
   if (els.tradesSection) els.tradesSection.hidden = false;
   renderTradesTable(list, document);
   if (shouldAnimate) flashResolvedRows(document, fresh);
+
+  paintEquity(list);
+  renderCalendar(list);
 }
 
 async function refresh({ silent = false } = {}) {
@@ -259,9 +266,28 @@ async function refresh({ silent = false } = {}) {
   }
 }
 
-els.refreshBtn?.addEventListener("click", () => refresh());
+function paintEquity(list) {
+  const mount = document.getElementById("equity-chart");
+  const empty = document.getElementById("equity-empty");
+  const resolved = list.filter((t) => isStatClosed(t));
+  if (!resolved.length) {
+    if (mount) mount.innerHTML = "";
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+  mountEquityChart(mount, resolved, () => paintEquity(trades()));
+}
+
 bindTradesTableSort(document, render);
 initProfile();
+initCalendar(document.getElementById("days-root"));
+const startTab = initTabs({
+  onChange(tab) {
+    if (tab === "wallet") loadProfile();
+  },
+});
+if (startTab === "wallet") loadProfile();
 refresh();
 startAutoRefresh(refresh);
 startRecapCountdown(document);

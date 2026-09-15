@@ -23,7 +23,7 @@ use_twap = true
 use_venues = true
 min_venues = 4
 
-stake_usd = 100
+stake_usd = 50
 min_seconds_left = 3
 tick_size = "0.01"
 
@@ -32,4 +32,4 @@ tick_size = "0.01"
 # wall_open, asia, london, wall, overlap, off.
 hours = []
 weekdays = []
-sessions = ["tokyo_open", "wall"]
+sessions = ["wall", "tokyo_open", "london"]

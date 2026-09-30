@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=20" />
+  <link rel="stylesheet" href="/styles.css?v=21" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
@@ -190,6 +190,13 @@
             </div>
           </div>
         </section>
+        <section class="would-card" id="would-section" aria-label="Would win and would lose">
+          <div class="section-title-bar">
+            <h3 class="section-heading">Would win / Would lose</h3>
+            <span class="section-subtext">Resolved outcomes · expected net</span>
+          </div>
+          <div id="would-grid" class="would-grid"></div>
+        </section>
         <section class="equity-card" aria-label="Equity curve">
           <div class="section-title-bar">
             <h3 class="section-heading">Equity</h3>
@@ -203,7 +210,7 @@
       <section class="tab-pane" data-tab="days" id="days-pane" hidden>
         <div class="section-title-bar">
           <h3 class="section-heading">Days</h3>
-          <span class="section-subtext">Month → day → hour</span>
+          <span class="section-subtext">Month → week → day → markets</span>
         </div>
         <div id="days-root" class="days-root"></div>
       </section>
@@ -280,6 +287,6 @@
     </div>
   </nav>
 
-  <script type="module" src="/js/app.js?v=18"></script>
+  <script type="module" src="/js/app.js?v=19"></script>
 </body>
 </html>

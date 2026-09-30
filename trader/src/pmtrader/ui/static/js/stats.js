@@ -72,6 +72,42 @@ export function computeSummary(trades, filterFn = () => true) {
   };
 }
 
+/**
+ * Resolved fills split into would-win and would-lose.
+ * Expected P&L is the sum of those outcomes (count × average result).
+ */
+export function computeWouldResults(trades) {
+  let wouldWin = 0;
+  let wouldLose = 0;
+  let winPnl = 0;
+  let losePnl = 0;
+
+  for (const t of trades) {
+    if (!isStatClosed(t)) continue;
+    const pnl = tradePnl(t) ?? 0;
+    if (effectiveWon(t)) {
+      wouldWin++;
+      winPnl += pnl;
+    } else {
+      wouldLose++;
+      losePnl += pnl;
+    }
+  }
+
+  const n = wouldWin + wouldLose;
+  const expected = winPnl + losePnl;
+  return {
+    wouldWin,
+    wouldLose,
+    winPnl,
+    losePnl,
+    expected,
+    perTrade: n > 0 ? expected / n : null,
+    avgWin: wouldWin > 0 ? winPnl / wouldWin : null,
+    avgLose: wouldLose > 0 ? losePnl / wouldLose : null,
+  };
+}
+
 function utcDateKeyFromTs(ts) {
   if (!ts) return null;
   const d = new Date(ts * 1000);

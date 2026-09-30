@@ -2114,10 +2114,14 @@ svg.equity-chart {
   margin-bottom: 12px;
 }
 
-.cal-weekdays {
+.cal-weekdays,
+.cal-week {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+}
+
+.cal-weekdays {
   margin-bottom: 6px;
   font-size: 0.68rem;
   font-weight: 600;
@@ -2127,11 +2131,7 @@ svg.equity-chart {
   text-align: center;
 }
 
-.cal-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-}
+.cal-week { margin-bottom: 8px; }
 
 .cal-cell {
   appearance: none;
@@ -2167,6 +2167,30 @@ svg.equity-chart {
   box-shadow: 0 0 0 1px var(--emerald-glow);
 }
 
+.cal-cell.is-outside { opacity: 0.72; }
+
+.cal-week-result {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inner);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+
+.cal-week-result.is-up { border-color: var(--emerald-border); }
+.cal-week-result.is-down { border-color: var(--crimson-border); }
+.cal-week-result.is-empty { opacity: 0.7; }
+.cal-week-range { font-weight: 700; color: var(--text-main); }
+.cal-week-rec { flex: 1; text-align: right; }
+.cal-week-result strong { font-size: 0.86rem; }
+
 .cal-day-panel {
   margin-top: 16px;
   padding-top: 14px;
@@ -2191,14 +2215,83 @@ svg.equity-chart {
 
 .cal-day-hero strong { font-size: 1.6rem; }
 
-.hour-chart {
-  display: grid;
-  grid-template-columns: repeat(24, 1fr);
-  gap: 3px;
-  height: 120px;
-  align-items: end;
-  margin: 8px 0 16px;
+.hour-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
 }
+
+.hour-step {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inner);
+  color: var(--text-main);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.hour-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.hour-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  scrollbar-width: thin;
+}
+
+.hour-pill {
+  appearance: none;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-inner);
+  color: var(--text-main);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.hour-pill-time { font-size: 0.78rem; font-weight: 700; }
+.hour-pill-net { font-size: 0.66rem; color: var(--text-muted); }
+.hour-pill.is-up .hour-pill-net { color: var(--emerald-light); }
+.hour-pill.is-down .hour-pill-net { color: var(--crimson-light); }
+.hour-pill.is-active {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 0 1px var(--emerald-glow);
+}
+
+.cal-markets-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cal-markets-title {
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cal-markets-head .cal-summary { margin: 0; }
 
 .hour-bar {
   appearance: none;
@@ -2240,13 +2333,21 @@ svg.equity-chart {
 
 .cal-fill {
   display: grid;
-  grid-template-columns: 52px 1fr auto;
+  grid-template-columns: 64px 42px minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   padding: 8px 10px;
   background: var(--bg-inner);
   border-radius: var(--radius-sm);
   font-size: 0.78rem;
+}
+
+.cal-fill-time { color: var(--text-muted); }
+.cal-fill-result {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
 }
 
 .cal-fill-side { font-weight: 700; }
@@ -2267,9 +2368,54 @@ svg.equity-chart {
 
 .wallet-body { display: flex; flex-direction: column; gap: 16px; }
 
+.would-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px 18px;
+  margin-bottom: 16px;
+}
+
+.would-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.would-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-inner);
+  border: 1px solid var(--border-subtle);
+}
+
+.would-tile.is-win { border-color: var(--emerald-border); }
+.would-tile.is-lose { border-color: var(--crimson-border); }
+
+.would-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.would-count { font-size: 1.45rem; line-height: 1.1; }
+.would-pnl { font-size: 0.95rem; font-weight: 700; }
+.would-avg { font-size: 0.72rem; color: var(--text-dim); }
+.would-empty { color: var(--text-muted); font-size: 0.82rem; margin: 0; }
+.would-count.up, .would-pnl.up { color: var(--emerald-light); }
+.would-count.down, .would-pnl.down { color: var(--crimson-light); }
+
 @media (max-width: 640px) {
   .cal-cell { min-height: 52px; padding: 4px 3px; }
   .cal-net { font-size: 0.5rem; }
   .cal-rec { display: none; }
-  .hour-chart { height: 96px; gap: 2px; }
+  .cal-week-rec { display: none; }
+  .cal-fill { grid-template-columns: 58px 36px minmax(0, 1fr) auto; }
+  .cal-fill-result { display: none; }
+  .would-grid { grid-template-columns: 1fr; }
 }

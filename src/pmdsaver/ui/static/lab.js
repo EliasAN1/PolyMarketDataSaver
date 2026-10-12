@@ -96,6 +96,7 @@ function coerceWhenKey(kind, key) {
 }
 
 const WHEN_STORAGE = "lab-when-v1";
+const SETTINGS_STORAGE = "lab-settings-v1";
 
 function saveWhenState() {
   try {
@@ -123,6 +124,81 @@ function loadWhenState() {
   } catch {
     /* ignore */
   }
+}
+
+function flagOn(value) {
+  return value === true || value === 1 || value === "true" || value === "on";
+}
+
+let hasSavedSettings = false;
+
+function snapshotControls() {
+  const params = getParams();
+  return JSON.stringify({
+    params,
+    rangeDays: $("rangeSel") ? $("rangeSel").value : "3",
+    slug: $("slugFilter") ? $("slugFilter").value : "",
+  });
+}
+
+function saveSettings() {
+  try {
+    const params = getParams();
+    const payload = {
+      ...params,
+      rangeDays: $("rangeSel").value,
+      slug: $("slugFilter").value,
+    };
+    localStorage.setItem(SETTINGS_STORAGE, JSON.stringify(payload));
+    hasSavedSettings = true;
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    setParams(parsed);
+    if (parsed.rangeDays != null && $("rangeSel")) $("rangeSel").value = String(parsed.rangeDays);
+    if (parsed.slug != null && $("slugFilter")) $("slugFilter").value = parsed.slug;
+    hasSavedSettings = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function renderApplied(params) {
+  const el = $("appliedFilters");
+  if (!el) return;
+  el.textContent = describeParams(params);
+}
+
+function reinforceSettings() {
+  // Saved settings win over the browser restoring an old form, which can
+  // light the TWAP / venues switches without a change event. The first
+  // result pass would otherwise keep the filters off.
+  if (hasSavedSettings) {
+    const before = snapshotControls();
+    loadSettings();
+    for (const pair of FILTER_PAIRS) applyFilterEnabled(pair);
+    renderWhenChips();
+    if (snapshotControls() === before) return;
+    renderApplied(getParams());
+    if (state.windows.length) recompute();
+    return;
+  }
+  if (!baselineSnap) return;
+  const snap = snapshotControls();
+  if (snap === baselineSnap) return;
+  for (const pair of FILTER_PAIRS) applyFilterEnabled(pair);
+  saveSettings();
+  renderWhenChips();
+  renderApplied(getParams());
+  if (state.windows.length) recompute();
 }
 
 /* ------------------------------------------------------------------ *
@@ -286,7 +362,7 @@ function setParams(params) {
   if (params.btcSource) $("btcSource").value = params.btcSource;
   const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues"];
   for (const t of toggles) {
-    if (params[t] != null) $(t).checked = params[t];
+    if (params[t] != null) $(t).checked = flagOn(params[t]);
   }
   for (const kind of ["hours", "weekdays", "sessions"]) {
     if (params[kind] !== undefined) {
@@ -332,15 +408,20 @@ function setParams(params) {
  * ------------------------------------------------------------------ */
 
 let recomputeTimer = null;
+let baselineSnap = "";
 function scheduleRecompute() {
+  saveSettings();
+  renderApplied(getParams());
   if (recomputeTimer) clearTimeout(recomputeTimer);
   recomputeTimer = setTimeout(recompute, 30);
   scheduleSweep();
 }
 
 function recompute() {
-  if (!state.windows.length) return;
+  for (const pair of FILTER_PAIRS) applyFilterEnabled(pair);
   const params = getParams();
+  renderApplied(params);
+  if (!state.windows.length) return;
   const result = LabEngine.evaluate(state.windows, params);
   state.lastResult = result;
   renderKpis(result.summary);
@@ -965,7 +1046,7 @@ function onSweepClick(event) {
  * ------------------------------------------------------------------ */
 
 function initWorker() {
-  state.worker = new Worker("/static/lab_worker.js?v=7");
+  state.worker = new Worker("/static/lab_worker.js?v=8");
   state.worker.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === "loaded") {
@@ -1092,8 +1173,8 @@ async function loadTape() {
   state.loading = true;
   $("errorBox").hidden = true;
   $("rescanBtn").disabled = true;
-  setDataStatus("Scanning windows…");
-  $("scanProgress").hidden = false;
+  setDataStatus("Checking cache…");
+  $("scanProgress").hidden = true;
   $("scanProgressFill").style.width = "0%";
   const rangeDays = $("rangeSel").value;
   const slug = $("slugFilter").value.trim();
@@ -1122,9 +1203,15 @@ async function loadTape() {
         const ev = JSON.parse(line);
         if (ev.type === "error") throw new Error(ev.detail || "Tape scan failed");
         if (ev.type === "scan_start") {
-          setDataStatus(ev.missing ? `Sampling ${ev.missing} new windows (${ev.cached} cached)…` : `${ev.cached} windows cached.`);
+          if (ev.missing) {
+            $("scanProgress").hidden = false;
+            setDataStatus(`Sampling ${ev.missing} new windows (${ev.cached} already ready)…`);
+          } else {
+            setDataStatus(`${ev.cached} windows ready.`);
+          }
         }
         if (ev.type === "scan_progress") {
+          $("scanProgress").hidden = false;
           const pct = ev.total ? Math.round((ev.done / ev.total) * 100) : 0;
           $("scanProgressFill").style.width = `${pct}%`;
           setDataStatus(`Sampling windows… ${ev.done} / ${ev.total}`);
@@ -1163,13 +1250,27 @@ async function loadTape() {
 /* ------------------------------------------------------------------ */
 
 function init() {
+  document.querySelectorAll("input, select").forEach((el) => {
+    el.autocomplete = "off";
+  });
   loadWhenState();
+  loadSettings();
   wireFilters();
   wireWhenBars();
+  renderWhenChips();
+  baselineSnap = snapshotControls();
+  renderApplied(getParams());
   wireTradesToolbar();
   initWorker();
-  $("rangeSel").addEventListener("change", loadTape);
+  window.addEventListener("pageshow", reinforceSettings);
+  setTimeout(reinforceSettings, 300);
+  setTimeout(reinforceSettings, 1000);
+  $("rangeSel").addEventListener("change", () => {
+    saveSettings();
+    loadTape();
+  });
   $("rescanBtn").addEventListener("click", loadTape);
+  $("slugFilter").addEventListener("input", saveSettings);
   $("slugFilter").addEventListener("keydown", (e) => {
     if (e.key === "Enter") loadTape();
   });

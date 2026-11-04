@@ -21,7 +21,9 @@ anyway).
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -35,7 +37,26 @@ from pmdsaver.backtest.replay import (
     load_closed_windows,
     resolve_window,
 )
+from pmdsaver.db import ensure_window_columns
 from pmdsaver.runtime import data_dir
+
+logger = logging.getLogger(__name__)
+
+# One sampler at a time. The page request and the background warmer share this
+# so a window is never written twice and the collector process is not forked
+# while another sampler is already walking the database.
+_SCAN_LOCK = threading.Lock()
+
+# A skip can become a real tape once settlement arrives. Retry only while the
+# window is still young, and not more than once a minute, so a window that
+# will never resolve cannot block the rest of the catch-up.
+_RETRY_AFTER_S = 60
+_RETRYABLE_SKIPS: dict[str, int] = {
+    "no_resolution": 6 * 3600,
+    "no_odds": 2 * 3600,
+    "no_ptb": 6 * 3600,
+    "no_snapshot": 30 * 60,
+}
 
 CACHE_FILE_NAME = "lab_cache_v3.db"
 ROW_WIDTH = 12
@@ -192,6 +213,69 @@ def _store(
     )
 
 
+def _connect_source() -> sqlite3.Connection:
+    path = data_dir() / "pmdsaver.db"
+    if not path.exists():
+        raise FileNotFoundError(f"Database not found: {path}")
+    conn = sqlite3.connect(path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    ensure_window_columns(conn)
+    return conn
+
+
+def _drop_retryable(cache_conn: sqlite3.Connection, now: float) -> int:
+    """Forget recent failed samples so the next pass can try them again."""
+    removed = 0
+    fresh_before = int(now - _RETRY_AFTER_S)
+    for reason, max_age in _RETRYABLE_SKIPS.items():
+        cur = cache_conn.execute(
+            """
+            DELETE FROM tapes
+            WHERE payload IS NULL
+              AND skip_reason = ?
+              AND window_end >= ?
+              AND created_at <= ?
+            """,
+            (reason, int(now - max_age), fresh_before),
+        )
+        removed += int(cur.rowcount or 0)
+    if removed:
+        cache_conn.commit()
+    return removed
+
+
+def warm_cache(*, limit: int = 8) -> int:
+    """Sample a few closed windows that are not ready yet.
+
+    Called on a timer after each 5-minute boundary, so opening Strategy Lab
+    reads the cache instead of waiting on a scan. Newest windows go first.
+    Returns how many windows were sampled on this pass.
+    """
+    conn = _connect_source()
+    try:
+        cache_conn = connect_cache()
+    except Exception:
+        conn.close()
+        raise
+    scanned = 0
+    try:
+        for event in scan_new_windows(
+            conn,
+            cache_conn,
+            workers=1,
+            limit=limit,
+            newest_first=True,
+        ):
+            if event.get("type") == "scan_done":
+                scanned = int(event.get("scanned") or 0)
+    finally:
+        conn.close()
+        cache_conn.close()
+    if scanned:
+        logger.info("Strategy Lab cache sampled %s window(s)", scanned)
+    return scanned
+
+
 def scan_new_windows(
     conn: sqlite3.Connection,
     cache_conn: sqlite3.Connection,
@@ -200,13 +284,44 @@ def scan_new_windows(
     start_ts: int | None = None,
     end_ts: int | None = None,
     workers: int = 0,
+    limit: int | None = None,
+    newest_first: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """Sample any window in range that isn't cached yet. Yields progress events."""
+    with _SCAN_LOCK:
+        yield from _scan_new_windows(
+            conn,
+            cache_conn,
+            slug=slug,
+            start_ts=start_ts,
+            end_ts=end_ts,
+            workers=workers,
+            limit=limit,
+            newest_first=newest_first,
+        )
+
+
+def _scan_new_windows(
+    conn: sqlite3.Connection,
+    cache_conn: sqlite3.Connection,
+    *,
+    slug: str | None = None,
+    start_ts: int | None = None,
+    end_ts: int | None = None,
+    workers: int = 0,
+    limit: int | None = None,
+    newest_first: bool = False,
+) -> Iterator[dict[str, Any]]:
+    _drop_retryable(cache_conn, time.time())
     windows = load_closed_windows(conn, slug=slug, start_ts=start_ts, end_ts=end_ts)
     cached_ids = {
         int(r["window_id"]) for r in cache_conn.execute("SELECT window_id FROM tapes").fetchall()
     }
     missing = [row for row in windows if int(row["id"]) not in cached_ids]
+    if newest_first:
+        missing.reverse()
+    if limit is not None and limit >= 0:
+        missing = missing[:limit]
     total = len(windows)
     total_missing = len(missing)
     yield {

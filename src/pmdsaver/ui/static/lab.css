@@ -132,6 +132,13 @@
 
 /* Filters ------------------------------------------------------------- */
 
+.lab-applied {
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  margin: -0.2rem 0 0.7rem;
+}
+
 .lab-filter {
   padding: 0.6rem 0;
   border-bottom: 1px solid var(--border);

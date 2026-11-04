@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -24,8 +28,47 @@ from pmdsaver.runtime import static_dir
 from pmdsaver.ui import queries
 
 STATIC_DIR = static_dir()
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="PolyMarket BTC 5m Dashboard")
+# Sample just after the 5-minute boundary so settlement has landed and the
+# Lab page can read a finished tape instead of scanning it on request.
+_WARM_AFTER_CLOSE_S = 20
+
+
+def _lab_cache_loop(stop: threading.Event) -> None:
+    while not stop.is_set():
+        scanned = 0
+        try:
+            scanned = lab_tape.warm_cache(limit=8)
+        except FileNotFoundError:
+            scanned = 0
+        except Exception:
+            logger.exception("Strategy Lab cache warm failed")
+            if stop.wait(15):
+                return
+            continue
+        if scanned:
+            if stop.wait(0.25):
+                return
+            continue
+        now = time.time()
+        nxt = (int(now) // 300 + 1) * 300 + _WARM_AFTER_CLOSE_S
+        if stop.wait(max(5.0, nxt - now)):
+            return
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> Iterator[None]:
+    stop = threading.Event()
+    thread = threading.Thread(target=_lab_cache_loop, args=(stop,), name="lab-cache-warm", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+
+
+app = FastAPI(title="PolyMarket BTC 5m Dashboard", lifespan=_lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 

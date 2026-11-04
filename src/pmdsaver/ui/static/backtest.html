@@ -6,9 +6,9 @@
   <title>BTC 5m · strategy lab</title>
   <link rel="stylesheet" href="/static/app.css?v=4" />
   <link rel="stylesheet" href="/static/backtest.css?v=5" />
-  <link rel="stylesheet" href="/static/lab.css?v=9" />
-  <script src="/static/lab_engine.js?v=7"></script>
-  <script src="/static/lab.js?v=9" defer></script>
+  <link rel="stylesheet" href="/static/lab.css?v=10" />
+  <script src="/static/lab_engine.js?v=8"></script>
+  <script src="/static/lab.js?v=10" defer></script>
 </head>
 <body>
   <header class="bt-header">
@@ -47,7 +47,7 @@
         <div class="lab-data-status" id="dataStatus">Loading…</div>
         <div class="lab-progress" id="scanProgress" hidden><div class="lab-progress-fill" id="scanProgressFill"></div></div>
         <button type="button" id="rescanBtn" class="lab-btn-secondary">Rescan</button>
-        <div class="lab-hint">Samples each window once per second for instant recompute. Entries can land up to 1s off the tick-exact CLI (<code>python -m pmdsaver.backtest</code>), which stays the source of truth for final numbers.</div>
+        <div class="lab-hint">Each window is sampled in the background right after it closes, so this page can open from the cache. Rescan only fills anything still missing. Entries can land up to 1s off the tick-exact CLI (<code>python -m pmdsaver.backtest</code>), which stays the source of truth for final numbers. Settings stay on this device.</div>
       </div>
 
       <div class="lab-group">
@@ -74,6 +74,7 @@
 
       <div class="lab-group">
         <h2>Entry filters</h2>
+        <div class="lab-applied" id="appliedFilters">Loading saved settings…</div>
 
         <div class="lab-filter" id="filterLastMinutes">
           <div class="lab-filter-head">

@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pmtrader.atr import AtrBlock, AtrBook, AtrReading
 from pmtrader.clock import (
     Window,
     current_window,
@@ -17,12 +18,19 @@ from pmtrader.clock import (
     window_from_slug,
 )
 from pmtrader.config import TraderConfig, env
+from pmtrader.dayctrl import DayControl
 from pmtrader.gamma import GammaClient, MarketInfo, extract_resolved_outcome
 from pmtrader.orders import OrderClient, describe_clob_error
 from pmtrader.outcome import fetch_clob_odds, infer_outcome_from_clob
 from pmtrader.snapshot import LiveSnapshot
 from pmtrader.strategy import Decision, evaluate
-from pmtrader.tradelog import entry_record, reject_record, resolve_record, unresolved_entries
+from pmtrader.tradelog import (
+    entry_record,
+    reject_record,
+    resolve_record,
+    unmatched_entry_record,
+    unresolved_entries,
+)
 from pmtrader.ui.server import serve_background
 from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream
 from pmtrader.streams.bybit import BybitSpotStream
@@ -58,17 +66,29 @@ class Trader:
     _last_decision: Decision | None = None
     _last_order: dict | None = None
     _gamma_ptb_poll_at: float = 0.0
+    day: DayControl | None = None
 
     def __post_init__(self) -> None:
         self.snap.btc_source = self.cfg.btc_source
+        if self.day is None:
+            log_path = getattr(self.orders, "log_path", None)
+            parent = Path(log_path).parent if log_path else Path("logs")
+            self.day = DayControl(parent / "day-control.json")
         self.rtds = RtdsTwapStream(on_tick=self._on_twap, on_ptb_captured=self._on_ptb)
         self.clob = ClobOddsStream(on_tick=self._on_odds)
         self.binance_spot = BinanceSpotStream(on_price_tick=self._on_price)
         self.binance_futures = BinanceFuturesStream(on_price_tick=self._on_price)
         self.coinbase = CoinbaseSpotStream(on_price_tick=self._on_price)
         self.bybit = BybitSpotStream(on_price_tick=self._on_price)
+        self.atr_book = AtrBook()
+        self._atr_result: AtrReading | AtrBlock | None = None
 
     async def run(self) -> None:
+        logger.info(
+            "Entry filters min_delay_seconds=%s atr_mean_max=%s",
+            self.cfg.min_delay_seconds,
+            self.cfg.atr_mean_max,
+        )
         self.orders.connect()
         ui_host = env("UI_HOST") or "127.0.0.1"
         ui_port = int(env("UI_PORT") or "3848")
@@ -87,6 +107,7 @@ class Trader:
         self.binance_futures.start()
         self.coinbase.start()
         self.bybit.start()
+        await self._arm_atr(self.current.start)
         self._tasks = [
             asyncio.create_task(self._window_loop(), name="window-loop"),
             asyncio.create_task(self._sample_loop(), name="sample-loop"),
@@ -148,6 +169,7 @@ class Trader:
         self._last_order = None
         # Leave the dead window immediately so the UI cannot sit on 0:00 / SENT
         # if Gamma or CLOB then throws while activating the next market.
+        await self._arm_atr(now_window.start)
         if self.snap.slug != now_window.slug:
             self.snap.reset_window(
                 slug=now_window.slug,
@@ -158,6 +180,7 @@ class Trader:
                 ptb=None,
                 ptb_source=None,
             )
+            self._reapply_atr()
         if self.next_market is not None and self.next_market.window.slug == now_window.slug:
             market = self.next_market
             self.next_market = None
@@ -202,6 +225,7 @@ class Trader:
             ptb=_to_float(ptb),
             ptb_source=source,
         )
+        self._reapply_atr()
         self.clob.set_tokens(market.up_token_id, market.down_token_id)
         await self.clob.bootstrap_from_rest()
         logger.info(
@@ -266,6 +290,28 @@ class Trader:
     async def _on_twap(self, tick: dict) -> None:
         self.snap.apply_twap(tick)
 
+    async def _arm_atr(self, window_start: int) -> None:
+        """Fetch 5m candles once per window and cache the ATR ratio."""
+        try:
+            self._atr_result = await self.atr_book.load_window(window_start, time.time())
+        except Exception:
+            logger.exception("ATR load failed for %s", window_start)
+            self._atr_result = AtrBlock("atr_missing")
+        self._reapply_atr()
+
+    def _reapply_atr(self) -> None:
+        result = self._atr_result
+        if isinstance(result, AtrReading):
+            self.snap.atr_value = result.atr
+            self.snap.atr_mean = result.atr_mean
+            self.snap.atr_ratio = result.ratio
+            self.snap.atr_block = None
+            return
+        self.snap.atr_value = None
+        self.snap.atr_mean = None
+        self.snap.atr_ratio = None
+        self.snap.atr_block = result.reason if isinstance(result, AtrBlock) else "atr_missing"
+
     async def _sample_loop(self) -> None:
         """Evaluate once per second at the Lab's tape boundary, not on every tick."""
         while not self._stop.is_set():
@@ -285,7 +331,12 @@ class Trader:
     async def _maybe_trade(self, *, now_s: float | None = None) -> None:
         if self._traded_slug == self.snap.slug:
             return
-        decision = evaluate(self.snap, self.cfg, now_s=time.time() if now_s is None else now_s)
+        decision = evaluate(
+            self.snap,
+            self.cfg,
+            now_s=time.time() if now_s is None else now_s,
+            day=self.day,
+        )
         self._last_decision = decision
         if not decision.ok or decision.side is None:
             return
@@ -313,28 +364,39 @@ class Trader:
             }
             now = time.time()
             if result.ok:
-                self.orders.append_log(
-                    entry_record(
-                        snap=self.snap,
-                        side=decision.side,
-                        limit=decision.limit,
-                        stake_usd=self.cfg.stake_usd,
-                        result=result,
-                        now_s=now,
-                    )
+                record = entry_record(
+                    snap=self.snap,
+                    side=decision.side,
+                    limit=decision.limit,
+                    stake_usd=self.cfg.stake_usd,
+                    result=result,
+                    now_s=now,
                 )
+            elif short == "no match":
+                record = unmatched_entry_record(
+                    snap=self.snap,
+                    side=decision.side,
+                    limit=decision.limit,
+                    stake_usd=self.cfg.stake_usd,
+                    result=result,
+                    now_s=now,
+                    error=detail,
+                    error_short=short,
+                )
+                logger.info("No match %s %s — logged would-have entry", self.snap.slug, decision.side)
             else:
-                self.orders.append_log(
-                    reject_record(
-                        snap=self.snap,
-                        side=decision.side,
-                        limit=decision.limit,
-                        stake_usd=self.cfg.stake_usd,
-                        result=result,
-                        now_s=now,
-                    )
+                record = reject_record(
+                    snap=self.snap,
+                    side=decision.side,
+                    limit=decision.limit,
+                    stake_usd=self.cfg.stake_usd,
+                    result=result,
+                    now_s=now,
                 )
                 logger.error("Order failed %s %s: %s", self.snap.slug, decision.side, result.error)
+            if decision.inverted:
+                record["inverted"] = True
+            self.orders.append_log(record)
 
     async def _settle_loop(self) -> None:
         while not self._stop.is_set():

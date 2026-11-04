@@ -1,6 +1,6 @@
 /** Aggregate stats from real fills only. */
 
-import { tradePnl, effectiveWon, isStatClosed } from "./parse.js?v=10";
+import { tradePnl, effectiveWon, isStatClosed, countsInStats } from "./parse.js?v=19";
 
 export function computeSummary(trades, filterFn = () => true) {
   let wins = 0;
@@ -19,7 +19,7 @@ export function computeSummary(trades, filterFn = () => true) {
   const todayUtcKey = utcDateKeyNow();
 
   for (const t of trades) {
-    if (!filterFn(t) || t.rejected) continue;
+    if (!filterFn(t) || !countsInStats(t)) continue;
     totalTrades++;
     if (!isStatClosed(t)) {
       open++;
@@ -67,14 +67,14 @@ export function computeSummary(trades, filterFn = () => true) {
     currentWinStreak: winStreak,
     currentLossStreak: lossStreak,
     tradingDays: new Set(
-      trades.filter((t) => isStatClosed(t) && filterFn(t)).map((t) => t.dayKey),
+      trades.filter((t) => isStatClosed(t) && countsInStats(t) && filterFn(t)).map((t) => t.dayKey),
     ).size,
   };
 }
 
 /**
- * Resolved fills split into would-win and would-lose.
- * Expected P&L is the sum of those outcomes (count × average result).
+ * Hypothetical P&L from no-fill (unmatched) orders only.
+ * Real fills belong in session profit, not here.
  */
 export function computeWouldResults(trades) {
   let wouldWin = 0;
@@ -83,7 +83,7 @@ export function computeWouldResults(trades) {
   let losePnl = 0;
 
   for (const t of trades) {
-    if (!isStatClosed(t)) continue;
+    if (!t.unmatched || !isStatClosed(t)) continue;
     const pnl = tradePnl(t) ?? 0;
     if (effectiveWon(t)) {
       wouldWin++;

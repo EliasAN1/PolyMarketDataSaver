@@ -9,6 +9,7 @@ function esc(value) {
 }
 
 function num(value) {
+  if (value == null || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -123,7 +124,7 @@ function renderProfile(data) {
     </div>
 
     <section class="profile-card">
-      <h3>Close Positions</h3>
+      <h3>Close all positions</h3>
       <p class="profile-hint">Redeems settled winners through the relayer and FAK-sells anything still open, including the current 5m window.</p>
       <div class="profile-close-row">
         <button type="button" class="profile-close-btn" data-close-scan>Scan queue</button>
@@ -132,8 +133,7 @@ function renderProfile(data) {
       <p class="profile-close-status" data-close-status></p>
     </section>
 
-    <section class="profile-card">
-      <h3>Account & Authorization</h3>
+    <details class="profile-card profile-disclosure"><summary>Account & Authorization</summary>
       <dl class="profile-kv">
         <dt>Funder</dt><dd title="${esc(data.wallet)}">${esc(shortAddr(data.wallet))}</dd>
         <dt>Signer</dt><dd title="${esc(data.signer)}">${esc(shortAddr(data.signer))}</dd>
@@ -143,10 +143,9 @@ function renderProfile(data) {
         <dt>Closed-only</dt><dd>${closedOnly ? "Yes" : "No"}</dd>
         <dt>CLOB Time</dt><dd>${esc(when(clob.server_time))}</dd>
       </dl>
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Open Orders (CLOB)</h3>
+    <details class="profile-card profile-disclosure"><summary>Open Orders (CLOB)</summary>
       ${table(
         ["Side", "Price", "Size", "Status", "Market"],
         orders.slice(0, 20).map((o) => [
@@ -157,10 +156,9 @@ function renderProfile(data) {
           cell(o.market || o.title || shortAddr(o.asset_id)),
         ]),
       )}
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Active Positions</h3>
+    <details class="profile-card profile-disclosure"><summary>Active Positions</summary>
       ${table(
         ["Market", "Side", "Shares", "Avg", "Now", "PnL"],
         active.slice(0, 30).map((p) => {
@@ -175,10 +173,9 @@ function renderProfile(data) {
           ];
         }),
       )}
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Unredeemed Leftovers</h3>
+    <details class="profile-card profile-disclosure"><summary>Unredeemed Leftovers</summary>
       ${leftover.length ? `<p class="profile-hint">Settled tokens still on the wallet. Use Close Positions above, or redeem on Polymarket.</p>` : ""}
       ${table(
         ["Market", "Side", "Shares", "Cost"],
@@ -189,10 +186,9 @@ function renderProfile(data) {
           cell(usd((num(p.avgPrice) ?? 0) * (num(p.size) ?? 0))),
         ]),
       )}
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Recent Fills</h3>
+    <details class="profile-card profile-disclosure"><summary>Recent Fills</summary>
       ${table(
         ["Side", "Price", "Shares", "Market"],
         trades.slice(0, 25).map((t) => [
@@ -202,10 +198,9 @@ function renderProfile(data) {
           cell(t.title || t.slug || "—"),
         ]),
       )}
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Wallet Activity</h3>
+    <details class="profile-card profile-disclosure"><summary>Wallet Activity</summary>
       ${table(
         ["Type", "Side", "Shares", "USDC", "Market"],
         activity.slice(0, 25).map((a) => [
@@ -216,10 +211,9 @@ function renderProfile(data) {
           cell(a.title || "—"),
         ]),
       )}
-    </section>
+    </details>
 
-    <section class="profile-card">
-      <h3>Notifications</h3>
+    <details class="profile-card profile-disclosure"><summary>Notifications</summary>
       ${table(
         ["When", "Side", "Size", "Price", "Market"],
         notes.slice(0, 15).map((n) => {
@@ -233,7 +227,7 @@ function renderProfile(data) {
           ];
         }),
       )}
-    </section>
+    </details>
   `;
 }
 

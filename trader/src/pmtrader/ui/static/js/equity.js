@@ -37,6 +37,9 @@ let dragState = null;
 let dragWired = false;
 let chartData = null;
 let dragUpdate = null;
+let zoom = { scale: 1, x: 0, y: 0 };
+let pinch = null;
+let pan = null;
 
 loadCompareRanges();
 
@@ -460,8 +463,135 @@ function svgClientToX(clientX) {
   return p.matrixTransform(ctm.inverse()).x;
 }
 
+function zoomActive() {
+  return zoom.scale > 1.02;
+}
+
+function applyZoom(inner) {
+  if (!inner) return;
+  inner.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+}
+
+function resetZoom(inner) {
+  zoom = { scale: 1, x: 0, y: 0 };
+  pinch = null;
+  pan = null;
+  applyZoom(inner);
+}
+
+function hypotTouches(a, b) {
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+}
+
+function wireZoom(container) {
+  const viewport = container.querySelector(".equity-zoom");
+  const inner = container.querySelector(".equity-zoom-inner");
+  if (!viewport || !inner) return;
+  inner.style.transformOrigin = "0 0";
+  applyZoom(inner);
+
+  viewport.addEventListener("touchstart", (e) => {
+    if (e.touches.length >= 2) {
+      e.preventDefault();
+      dragState = null;
+      pinch = {
+        dist: hypotTouches(e.touches[0], e.touches[1]) || 1,
+        scale: zoom.scale,
+        x: zoom.x,
+        y: zoom.y,
+      };
+      pan = null;
+    } else if (e.touches.length === 1 && zoomActive()) {
+      pan = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+        zx: zoom.x,
+        zy: zoom.y,
+      };
+    }
+  }, { passive: false });
+
+  viewport.addEventListener("touchmove", (e) => {
+    if (pinch && e.touches.length >= 2) {
+      e.preventDefault();
+      const next = Math.min(8, Math.max(1, pinch.scale * (hypotTouches(e.touches[0], e.touches[1]) / pinch.dist)));
+      zoom.scale = next;
+      applyZoom(inner);
+    } else if (pan && e.touches.length === 1 && zoomActive()) {
+      e.preventDefault();
+      zoom.x = pan.zx + (e.touches[0].clientX - pan.x);
+      zoom.y = pan.zy + (e.touches[0].clientY - pan.y);
+      applyZoom(inner);
+    }
+  }, { passive: false });
+
+  viewport.addEventListener("touchend", (e) => {
+    if (e.touches.length < 2) pinch = null;
+    if (e.touches.length === 0) {
+      pan = null;
+      if (zoom.scale <= 1.02) resetZoom(inner);
+    }
+  });
+
+  viewport.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    if (zoomActive()) resetZoom(inner);
+    else {
+      zoom = { scale: 2.2, x: 0, y: 0 };
+      applyZoom(inner);
+    }
+  });
+}
+
+export function initEquityExpand() {
+  const card = document.getElementById("equity-card");
+  const btn = document.getElementById("equity-expand-btn");
+  if (!card || !btn || btn.dataset.wired) return;
+  btn.dataset.wired = "1";
+
+  function isOpen() {
+    return card.classList.contains("is-expanded");
+  }
+
+  function open() {
+    if (isOpen()) return;
+    card.classList.add("is-expanded");
+    document.body.classList.add("equity-open");
+    btn.textContent = "Close";
+    btn.setAttribute("aria-expanded", "true");
+    if (!location.hash.includes("/chart")) {
+      history.pushState(null, "", "#stats/chart");
+    }
+  }
+
+  function close({ fromPop } = {}) {
+    if (!isOpen()) return;
+    card.classList.remove("is-expanded");
+    document.body.classList.remove("equity-open");
+    btn.textContent = "Expand";
+    btn.setAttribute("aria-expanded", "false");
+    const inner = card.querySelector(".equity-zoom-inner");
+    if (inner) resetZoom(inner);
+    if (!fromPop && location.hash.includes("/chart")) {
+      history.replaceState(null, "", "#stats");
+    }
+  }
+
+  btn.addEventListener("click", () => {
+    if (isOpen()) close();
+    else open();
+  });
+
+  window.addEventListener("hashchange", () => {
+    if (location.hash.includes("/chart")) open();
+    else if (isOpen()) close({ fromPop: true });
+  });
+
+  if (location.hash.includes("/chart")) open();
+}
+
 function dragOnDown(e) {
-  if (!chartData || e.button === 2) return;
+  if (!chartData || e.button === 2 || zoomActive()) return;
   const x = svgClientToX(e.clientX);
   if (x == null || x < chartData.PADL || x > chartData.W - chartData.PADR) return;
   dragState = {
@@ -528,7 +658,8 @@ function wireDrag(onUpdate) {
   if (!svg) return;
   svg.addEventListener("mousedown", dragOnDown);
   svg.addEventListener("touchstart", (e) => {
-    if (e.touches[0]) dragOnDown(e.touches[0]);
+    if (e.touches.length !== 1 || zoomActive()) return;
+    dragOnDown(e.touches[0]);
   }, { passive: false });
 
   if (dragWired) return;
@@ -536,7 +667,8 @@ function wireDrag(onUpdate) {
   document.addEventListener("mousemove", dragOnMove);
   document.addEventListener("mouseup", dragOnUp);
   document.addEventListener("touchmove", (e) => {
-    if (e.touches[0]) dragOnMove(e.touches[0]);
+    if (!dragState || pinch || zoomActive() || e.touches.length !== 1) return;
+    dragOnMove(e.touches[0]);
   }, { passive: false });
   document.addEventListener("touchend", dragOnUp);
 }
@@ -584,31 +716,38 @@ function windowSummary(filtered, bounds) {
 }
 
 function wireWindowControls(container, periods, onUpdate) {
+  function changeWindow(fn) {
+    resetZoom();
+    fn();
+    saveWindowState();
+    onUpdate?.();
+  }
+
   container.querySelectorAll("[data-eq-mode]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      windowState.mode = btn.dataset.eqMode;
-      ensureAnchor(windowState.mode, periods);
-      saveWindowState();
-      onUpdate?.();
+      changeWindow(() => {
+        windowState.mode = btn.dataset.eqMode;
+        ensureAnchor(windowState.mode, periods);
+      });
     });
   });
 
   container.querySelector("[data-eq-nav='-1']")?.addEventListener("click", () => {
-    windowState.anchor = shiftAnchor(windowState.mode, windowState.anchor, 1, periods);
-    saveWindowState();
-    onUpdate?.();
+    changeWindow(() => {
+      windowState.anchor = shiftAnchor(windowState.mode, windowState.anchor, 1, periods);
+    });
   });
 
   container.querySelector("[data-eq-nav='1']")?.addEventListener("click", () => {
-    windowState.anchor = shiftAnchor(windowState.mode, windowState.anchor, -1, periods);
-    saveWindowState();
-    onUpdate?.();
+    changeWindow(() => {
+      windowState.anchor = shiftAnchor(windowState.mode, windowState.anchor, -1, periods);
+    });
   });
 
   container.querySelector(".eq-anchor-select")?.addEventListener("change", (e) => {
-    windowState.anchor = e.target.value;
-    saveWindowState();
-    onUpdate?.();
+    changeWindow(() => {
+      windowState.anchor = e.target.value;
+    });
   });
 }
 
@@ -644,14 +783,17 @@ export function mountEquityChart(container, resolved, onUpdate) {
 
   chartData = built;
   const stats = compareStatsHtml(resolved);
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  const hint = coarse ? "Pinch to zoom · drag to compare" : "Hover · drag A · shift+drag B";
   container.innerHTML =
-    `<div class="equity-head">${controls}<p class="equity-summary">${summary}</p><span class="equity-hint">Hover · drag A · shift+drag B</span></div>` +
-    built.svg +
+    `<div class="equity-head">${controls}<p class="equity-summary">${summary}</p><span class="equity-hint">${hint}</span></div>` +
+    `<div class="equity-zoom"><div class="equity-zoom-inner">${built.svg}</div></div>` +
     stats;
 
   wireWindowControls(container, periods, onUpdate);
   wireHover(container, built);
   wireDrag(onUpdate);
+  wireZoom(container);
 
   container.querySelector(".equity-clear-ranges")?.addEventListener("click", () => {
     compareRangeA = null;

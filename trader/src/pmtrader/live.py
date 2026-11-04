@@ -8,12 +8,24 @@ from typing import Any
 
 from pmtrader.clock import current_window
 from pmtrader.config import TraderConfig
+from pmtrader.dayctrl import empty_day_payload
 from pmtrader.snapshot import LiveSnapshot
-from pmtrader.strategy import Decision, _ask_fillable
+from pmtrader.strategy import Decision, _ask_fillable, _atr_block_reason
 from pmtrader.when import WEEKDAY_NAMES, session_catalog
 
 # Skip reasons raised after the odds-band test passed on the last sample.
-_PAST_BAND_REASONS = frozenset({"ok", "no_twap", "twap_disagree", "venues", "no_ask", "ask_above_cap"})
+_PAST_BAND_REASONS = frozenset({
+    "ok",
+    "no_twap",
+    "twap_disagree",
+    "venues",
+    "no_ask",
+    "ask_above_cap",
+    "too_early",
+    "early_cross",
+    "atr_high",
+    "atr_missing",
+})
 
 _VENUE_NAMES = {
     "binance_spot": "Binance",
@@ -29,11 +41,13 @@ def _venue_name(cfg: TraderConfig) -> str:
 
 def live_payload(trader: Any | None) -> dict[str, Any]:
     if trader is None:
-        return {"running": False}
+        return {"running": False, "day": empty_day_payload()}
 
     snap: LiveSnapshot = trader.snap
     cfg: TraderConfig = trader.cfg
     now = time.time()
+    day = getattr(trader, "day", None)
+    day_payload = day.payload() if day is not None else empty_day_payload()
     # The runner samples once per second and owns the band memory; re-running
     # evaluate() here would mutate it from the UI thread.
     decision: Decision | None = trader._last_decision
@@ -72,6 +86,8 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
         "elapsed_s": max(0, int(now - snap.window_start)) if snap.window_start else None,
         "state": state,
         "side": (decision.side if decision is not None else None) or (order.get("side") if order else None) or side,
+        "signal_side": side,
+        "inverted": cfg.hour_is_inverted(snap.window_start or now),
         "traded": traded,
         "order": order,
         "ptb": snap.ptb,
@@ -106,6 +122,8 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "use_venues": cfg.use_venues,
             "min_venues": cfg.min_venues,
             "stake_usd": cfg.stake_usd,
+            "min_delay_seconds": cfg.min_delay_seconds,
+            "atr_mean_max": cfg.atr_mean_max,
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,
             **cfg.when_payload(),
@@ -115,8 +133,17 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "ok": cfg.when_ok(snap.window_start or now),
             "catalog": session_catalog(),
         },
+        "day": day_payload,
         "checks": _checks(
-            snap, cfg, now_s=now, traded=traded, side=side, decision=decision, ptb_wait=ptb_wait, order=order
+            snap,
+            cfg,
+            now_s=now,
+            traded=traded,
+            side=side,
+            decision=decision,
+            ptb_wait=ptb_wait,
+            order=order,
+            day=day,
         ),
     }
 
@@ -169,6 +196,7 @@ def _checks(
     decision: Decision | None,
     ptb_wait: str | None = None,
     order: dict[str, Any] | None = None,
+    day: Any | None = None,
 ) -> list[dict[str, Any]]:
     left = (snap.window_end - now_s) if snap.window_end else None
     elapsed = (now_s - snap.window_start) if snap.window_start else None
@@ -232,6 +260,13 @@ def _checks(
         when_now = f"{WEEKDAY_NAMES[int(opened.strftime('%w'))]} {opened.strftime('%H:%M')}"
     else:
         when_now = "No window"
+    day_block = day.entry_block_reason(snap.window_start or now_s) if day is not None else None
+    if day_block == "stopped_for_day":
+        when_ok = False
+        when_now = "Stopped for today"
+    elif day_block == "skipped_hour":
+        when_ok = False
+        when_now = "Hour skipped"
 
     return [
         {
@@ -253,6 +288,26 @@ def _checks(
                 else "No window"
             ),
             "enabled": True,
+        },
+        {
+            "id": "delay",
+            "name": "Open Delay",
+            "target": f"> {_clock(cfg.min_delay_seconds)}",
+            "ok": (
+                elapsed is not None
+                and elapsed > cfg.min_delay_seconds
+                and not snap.early_cross
+            ),
+            "value": (
+                "Crossed before the delay"
+                if snap.early_cross
+                else (
+                    f"{_clock(elapsed)} / {_clock(cfg.min_delay_seconds)}"
+                    if elapsed is not None
+                    else "No window"
+                )
+            ),
+            "enabled": cfg.min_delay_seconds > 0,
         },
         {
             "id": "ptb",
@@ -303,6 +358,14 @@ def _checks(
             "enabled": cfg.use_venues,
         },
         {
+            "id": "atr",
+            "name": "ATR vs Mean",
+            "target": f"<= {cfg.atr_mean_max:g}x",
+            "ok": _atr_block_reason(snap, cfg) is None,
+            "value": _atr_value(snap),
+            "enabled": True,
+        },
+        {
             "id": "once",
             "name": "Window Order Lock",
             "target": "1 per 5m",
@@ -311,6 +374,14 @@ def _checks(
             "enabled": True,
         },
     ]
+
+
+def _atr_value(snap: LiveSnapshot) -> str:
+    if snap.atr_block:
+        return snap.atr_block.replace("_", " ")
+    if snap.atr_ratio is None:
+        return "waiting"
+    return f"{snap.atr_ratio:.3f}x"
 
 
 def _once_value(traded: bool, order: dict[str, Any] | None) -> str:

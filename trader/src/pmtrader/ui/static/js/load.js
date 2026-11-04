@@ -1,7 +1,18 @@
 import { parseJsonl } from "./parse.js";
 
-export async function loadFromServer() {
-  const res = await fetch(`/api/logs/trades.jsonl?_=${Date.now()}`, { cache: "no-store" });
+export async function listLogSources() {
+  try {
+    const res = await fetch("/api/logs", { cache: "no-store" });
+    if (!res.ok) return { files: [] };
+    return await res.json();
+  } catch {
+    return { files: [] };
+  }
+}
+
+export async function loadFromServer(source) {
+  const extra = source && source !== "live" ? `&source=${encodeURIComponent(source)}` : "";
+  const res = await fetch(`/api/logs/trades.jsonl?_=${Date.now()}${extra}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const text = await res.text();
   return parseJsonl(text);

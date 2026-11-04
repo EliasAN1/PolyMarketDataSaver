@@ -2,11 +2,11 @@
 
 # Minutes from window open.
 elapsed_from_min = 0.0
-elapsed_to_min = 2.5
+elapsed_to_min = 2.0
 
 # Trigger band: chosen side's mid must *enter* [odds_min, odds_max] during the elapsed window
 # (already inside at the first in-band tick does not count).
-odds_min = 0.05
+odds_min = 0.45
 odds_max = 0.55
 
 # Hard cap on the ask (separate from trigger). Lab fills at the ask on the sample
@@ -17,19 +17,26 @@ use_btc_distance = true
 # Spot venue that stands in for BTC (Lab "BTC reference"): binance_spot | coinbase_spot | bybit_spot | median
 btc_source = "binance_spot"
 min_btc_away = 0
-max_btc_away = 50
+max_btc_away = 200
 
 use_twap = true
 use_venues = true
 min_venues = 4
 
-stake_usd = 50
+stake_usd = 2
 min_seconds_left = 3
 tick_size = "0.01"
 
-# When to trade. Empty = all. Hours are local clock (0-23). Weekdays are
-# Sun=0 or Mon,Tue,... Markets match the Lab: tokyo_open, london_open,
-# wall_open, asia, london, wall, overlap, off.
+# Seconds after the window open. A signal before this is held and rechecked.
+min_delay_seconds = 10
+# Wilder ATR(14) / mean of the last 288 closed 5m ATRs. Skip above this.
+atr_mean_max = 1.125
+
+# When to trade. Empty = all. Hours are the machine clock (Europe/Berlin, UTC+2).
+# Weekdays are Sun=0 or Mon,Tue,... Markets: tokyo_open, london, wall, ...
 hours = []
 weekdays = []
-sessions = ["wall", "tokyo_open", "london"]
+sessions = []
+
+# Local hours that buy the opposite of the signal. Empty = never.
+invert_hours = []

@@ -1,6 +1,6 @@
-import { fmtUsd } from "./stats.js?v=10";
-import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, fmtSide } from "./format.js?v=10";
-import { tradePnl, effectiveWon, isStatClosed } from "./parse.js?v=10";
+import { compactTradeHtml } from "./compact-ui.js?v=26";
+import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, outcomeBadge } from "./format.js?v=19";
+import { tradePnl, isStatClosed, effectiveWon, countsInStats } from "./parse.js?v=19";
 
 function attrEsc(value) {
   return String(value ?? "")
@@ -17,6 +17,17 @@ const COLUMNS = [
   { key: "outcome", label: "Result", customOutcome: true },
   { key: "netPnl", label: "Net P&L", customPnl: true, mono: true },
 ];
+
+let filter = "all";
+let visibleCount = 30;
+
+function matchesFilter(t) {
+  if (filter === "all") return true;
+  if (filter === "unfilled") return t.unmatched || t.rejected;
+  if (!countsInStats(t)) return false;
+  if (filter === "open") return !isStatClosed(t);
+  return isStatClosed(t) && effectiveWon(t) === (filter === "won");
+}
 
 let sortKey = "entryTs";
 let sortDir = -1;
@@ -52,11 +63,11 @@ export function renderTradesTable(trades, root = document) {
     return `<th data-sort="${c.key}">${c.label}${arrow}</th>`;
   }).join("")}</tr>`;
 
-  const sorted = [...trades].sort((a, b) => sortDir * compare(a, b, sortKey));
+  const sorted = trades.filter(matchesFilter).sort((a, b) => sortDir * compare(a, b, sortKey));
   const frag = document.createDocumentFragment();
 
   // 1. Table Rows (Desktop)
-  for (const t of sorted) {
+  for (const t of sorted.slice(0, visibleCount)) {
     const tr = document.createElement("tr");
     tr.className = "trade-row";
     if (t.oid) tr.dataset.oid = t.oid;
@@ -77,23 +88,16 @@ export function renderTradesTable(trades, root = document) {
         const sideLower = (t.side || "up").toLowerCase();
         td.innerHTML = `<span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span>`;
       } else if (col.customOutcome) {
-        if (t.rejected) {
-          const why = t.errorShort || "rejected";
-          td.innerHTML = `<span class="badge-outcome failed" title="${attrEsc(t.error || why)}">FAILED</span>`;
-        } else {
-          const closed = isStatClosed(t);
-          const won = effectiveWon(t);
-          const label = !closed ? "OPEN" : won ? "WON" : "LOST";
-          const cls = !closed ? "open" : won ? "won" : "lost";
-          td.innerHTML = `<span class="badge-outcome ${cls}">${label}</span>`;
-        }
+        const badge = outcomeBadge(t);
+        const title = t.unmatched ? "No fill — hypothetical result" : t.error || "";
+        td.innerHTML = `<span class="badge-outcome ${badge.cls}"${title ? ` title="${attrEsc(title)}"` : ""}>${badge.label}</span>`;
       } else if (col.customPnl) {
         if (t.rejected) {
           td.textContent = t.errorShort || "rejected";
           td.title = t.error || t.errorShort || "Order rejected";
           td.classList.add("down");
         } else if (!t.resolved) {
-          td.innerHTML = `<span class="badge-outcome open">OPEN</span>`;
+          td.innerHTML = `<span class="badge-outcome open">${t.unmatched ? "NO FILL" : "OPEN"}</span>`;
         } else {
           const pnl = tradePnl(t);
           td.textContent = pnlAtStake(t);
@@ -111,53 +115,20 @@ export function renderTradesTable(trades, root = document) {
   tbody.replaceChildren(frag);
   if (countEl) countEl.textContent = `${trades.length} ${trades.length === 1 ? "trade" : "trades"}`;
 
-  // 2. Mobile Cards View (Narrow Screens)
-  if (mobileList) {
-    if (!trades.length) {
-      mobileList.innerHTML = "";
-    } else {
-      mobileList.innerHTML = sorted.map((t) => {
-        const sideLower = (t.side || "up").toLowerCase();
-        const closed = isStatClosed(t);
-        const won = effectiveWon(t);
-        const outcomeTag = t.rejected ? "FAILED" : !closed ? "OPEN" : won ? "WON" : "LOST";
-        const outcomeCls = t.rejected ? "failed" : !closed ? "open" : won ? "won" : "lost";
-        const pnl = tradePnl(t);
-        const pnlText = t.rejected ? (t.errorShort || "rejected") : !t.resolved ? "open" : pnlAtStake(t);
-        const pnlTone = pnl != null ? (pnl >= 0 ? "up" : "down") : "";
-        const time = fmtTs(t.entryTs);
-        const fillPrice = fmtOdds(t.fillPrice);
-        const marketName = slugLabel(t.slug);
-        const marketUrl = slugUrl(t.slug);
-
-        return `
-          <div class="mobile-trade-card">
-            <div class="mobile-card-top">
-              <a href="${marketUrl}" target="_blank" rel="noopener noreferrer" class="mobile-card-slug">${marketName}</a>
-              <span class="badge-outcome ${outcomeCls}">${outcomeTag}</span>
-            </div>
-            <div class="mobile-card-grid">
-              <div class="mobile-stat-col">
-                <span class="mobile-stat-k">Side / Time</span>
-                <span class="mobile-stat-v"><span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span> ${time}</span>
-              </div>
-              <div class="mobile-stat-col">
-                <span class="mobile-stat-k">Fill Price</span>
-                <span class="mobile-stat-v">${fillPrice}</span>
-              </div>
-              <div class="mobile-stat-col">
-                <span class="mobile-stat-k">Net P&L</span>
-                <span class="mobile-stat-v ${pnlTone}">${pnlText}</span>
-              </div>
-            </div>
-          </div>
-        `;
-      }).join("");
-    }
-  }
+  if (countEl) countEl.textContent = `${sorted.length} of ${trades.length} orders`;
+  if (mobileList) mobileList.innerHTML = sorted.length ? sorted.slice(0, visibleCount).map(compactTradeHtml).join("") : '<p class="compact-empty">No trades match this filter.</p>';
+  const more = root.getElementById("trades-load-more");
+  if (more) { more.hidden = sorted.length <= visibleCount; more.textContent = `Show more · ${Math.max(0, sorted.length - visibleCount)} remaining`; }
+  root.querySelectorAll("[data-trade-filter]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.tradeFilter === filter)));
 }
 
 export function bindTradesTableSort(root = document, onSort) {
+  root.querySelectorAll("[data-trade-filter]").forEach(button => button.addEventListener("click", () => {
+    filter = button.dataset.tradeFilter;
+    visibleCount = 30;
+    onSort?.();
+  }));
+  root.getElementById("trades-load-more")?.addEventListener("click", () => { visibleCount += 30; onSort?.(); });
   root.getElementById("trades-table")?.addEventListener("click", (e) => {
     const th = e.target.closest("th[data-sort]");
     if (!th) return;

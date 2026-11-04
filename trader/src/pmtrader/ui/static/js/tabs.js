@@ -1,4 +1,4 @@
-const TABS = ["live", "stats", "days", "trades", "wallet"];
+const TABS = ["live", "stats", "days", "trades", "wallet", "settings"];
 const STORAGE_KEY = "pmtrader.ui.tab";
 
 let active = "live";
@@ -27,6 +27,7 @@ export function initTabs(opts = {}) {
 
 export function selectTab(id, { persist = true, silent = false } = {}) {
   const tab = normalize(id) || "live";
+  const changed = active !== tab;
   active = tab;
 
   for (const pane of document.querySelectorAll(".tab-pane[data-tab]")) {
@@ -47,18 +48,21 @@ export function selectTab(id, { persist = true, silent = false } = {}) {
     } catch {
       /* ignore */
     }
-    const nextHash = `#${tab}`;
-    if (location.hash !== nextHash) {
-      history.replaceState(null, "", nextHash);
+    const hashBody = location.hash.slice(1);
+    const keepSub = hashBody === tab || hashBody.startsWith(`${tab}/`);
+    if (!keepSub) {
+      history.replaceState(null, "", `#${tab}`);
     }
   }
 
+  if (changed) window.scrollTo({ top: 0, behavior: "instant" });
   if (!silent) onChange?.(tab);
 }
 
 function normalize(id) {
   const raw = String(id || "").toLowerCase().trim();
-  return TABS.includes(raw) ? raw : null;
+  const base = raw.split("/")[0];
+  return TABS.includes(base) ? base : null;
 }
 
 function readInitial() {
@@ -70,5 +74,5 @@ function readInitial() {
   } catch {
     /* ignore */
   }
-  return "live";
+  return "stats";
 }

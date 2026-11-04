@@ -19,17 +19,22 @@ class SettingsActivity : AppCompatActivity() {
                 url = "https://$url"
             }
             Prefs.setUrl(this, url)
-            WatchService.start(this)
+            WatchScheduler.ensureScheduled(this)
+            WatchScheduler.requestCheck(this)
             Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
             finish()
         }
         binding.testTradeBtn.setOnClickListener {
-            WatchService.start(this, "entry")
+            WatchScheduler.test(this, "entry")
             Toast.makeText(this, "Trade ping sent", Toast.LENGTH_SHORT).show()
         }
         binding.testResultBtn.setOnClickListener {
-            WatchService.start(this, "resolve")
+            WatchScheduler.test(this, "resolve")
             Toast.makeText(this, "Result ping sent", Toast.LENGTH_SHORT).show()
+        }
+        binding.testRecapBtn.setOnClickListener {
+            WatchScheduler.test(this, "summary")
+            Toast.makeText(this, "Recap ping sent", Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -73,6 +73,11 @@ export function takerFee(shares, price, rate = CRYPTO_TAKER_FEE_RATE) {
   return fee >= 1e-5 ? fee : 0;
 }
 
+/** Real filled trades that should move cash / equity / calendar. */
+export function countsInStats(t) {
+  return !t.rejected && !t.unmatched;
+}
+
 /** Dollars won/lost on this fill, after crypto taker fee. */
 export function tradePnl(t) {
   if (t.rejected) return null;
@@ -263,11 +268,21 @@ export function buildTrades(records) {
       ? (flipBuy?.side ?? rv?.side ?? entrySide)
       : (rv?.side ?? entrySide);
 
-    const rejected = e.event === "reject" || e.ok === false;
-    const fillPrice = rejected ? num(e.limit ?? e.fill_price) : num(e.fill_price);
-    const fillShares = rejected ? 0 : num(e.fill_shares);
-    const fillCost = fillPrice != null && fillShares != null ? fillPrice * fillShares : null;
+    const unmatched =
+      !!e.unmatched ||
+      !!rv?.unmatched ||
+      (e.event === "reject" && /no match|no orders found/i.test(String(e.error_short || e.error || "")));
+    const rejected = !unmatched && (e.event === "reject" || e.ok === false);
+    const fillPrice = unmatched
+      ? num(e.fill_price) ?? num(e.limit)
+      : rejected
+        ? num(e.limit ?? e.fill_price)
+        : num(e.fill_price);
     const requested = num(e.stake_usd) ?? num(e.requested_stake_usd);
+    const fillShares = rejected
+      ? 0
+      : num(e.fill_shares) ?? (unmatched && fillPrice && requested ? requested / fillPrice : null);
+    const fillCost = fillPrice != null && fillShares != null ? fillPrice * fillShares : null;
     const stake = fillCost > 0 ? fillCost : requested > 0 ? requested : 1;
     const entryTs = Number(e.entry_ts ?? e.ts ?? 0);
     const windowEnd = Number(e.window_end_ts ?? rv?.window_end_ts ?? 0);
@@ -297,9 +312,10 @@ export function buildTrades(records) {
       windowEnd,
       secLeft,
       triggerAsk: e.trigger_ask,
-      fillPrice: rejected ? (e.limit ?? e.fill_price) : e.fill_price,
-      fillShares: rejected ? 0 : e.fill_shares,
+      fillPrice: unmatched ? (e.fill_price ?? e.limit) : rejected ? (e.limit ?? e.fill_price) : e.fill_price,
+      fillShares: rejected ? 0 : fillShares,
       rejected,
+      unmatched,
       error: e.error || null,
       errorShort: e.error_short || null,
       stake,

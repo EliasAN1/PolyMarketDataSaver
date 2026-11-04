@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import tomllib
 from dataclasses import dataclass, fields
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from pmtrader.when import (
+    SESSION_ALIASES,
+    SESSION_KEYS,
+    WEEKDAY_INDEX,
     dump_hours,
     dump_sessions,
     dump_weekdays,
@@ -17,6 +22,7 @@ from pmtrader.when import (
     normalize_sessions,
     normalize_weekdays,
     passes_when,
+    session_catalog,
     when_active,
     when_label,
 )
@@ -52,6 +58,10 @@ class TraderConfig:
     min_venues: int = 2
     stake_usd: float = 10.0
     min_seconds_left: float = 3.0
+    # Hold a signal that appears in the first N seconds and recheck it later.
+    min_delay_seconds: float = 10.0
+    # Wilder ATR(14) divided by its 288-candle mean. Skip the window above this.
+    atr_mean_max: float = 1.125
     tick_size: str = "0.01"
     # Empty / omitted = no clock filter (trade every hour / day / session).
     # Hours 0-23 local. Weekdays 0=Sun..6=Sat or Mon,Tue,... Sessions: tokyo_open,
@@ -59,11 +69,14 @@ class TraderConfig:
     hours: tuple[int, ...] | None = None
     weekdays: tuple[int, ...] | None = None
     sessions: tuple[str, ...] | None = None
+    # Local hours that buy the opposite of the signal. Empty = never invert.
+    invert_hours: tuple[int, ...] | None = None
 
     def __post_init__(self) -> None:
         self.hours = normalize_hours(self.hours)
         self.weekdays = normalize_weekdays(self.weekdays)
         self.sessions = normalize_sessions(self.sessions)
+        self.invert_hours = normalize_hours(self.invert_hours)
         if not 0 < self.odds_min <= self.odds_max < 1:
             raise ValueError("odds_min / odds_max must satisfy 0 < min <= max < 1")
         cap = self.effective_fak_limit()
@@ -77,6 +90,12 @@ class TraderConfig:
             raise ValueError("min_venues must be >= 1")
         if self.btc_source not in BTC_SOURCES:
             raise ValueError(f"btc_source must be one of {', '.join(BTC_SOURCES)}; got {self.btc_source!r}")
+        self.min_delay_seconds = float(self.min_delay_seconds)
+        self.atr_mean_max = float(self.atr_mean_max)
+        if self.min_delay_seconds < 0:
+            raise ValueError("min_delay_seconds must be >= 0")
+        if self.atr_mean_max <= 0:
+            raise ValueError("atr_mean_max must be > 0")
         if self.min_btc_away < 0:
             raise ValueError("min_btc_away must be >= 0")
         if self.max_btc_away is not None:
@@ -134,13 +153,46 @@ class TraderConfig:
         self.weekdays = normalize_weekdays(weekdays)
         self.sessions = normalize_sessions(sessions)
 
+    def hour_is_inverted(self, ts: float | None) -> bool:
+        if not self.invert_hours or ts is None or ts <= 0:
+            return False
+        return datetime.fromtimestamp(float(ts)).hour in self.invert_hours
+
     def when_payload(self) -> dict[str, Any]:
         return {
             "hours": dump_hours(self.hours),
             "weekdays": dump_weekdays(self.weekdays),
             "sessions": dump_sessions(self.sessions),
+            "invert_hours": dump_hours(self.invert_hours),
             "active": self.when_filter_on(),
             "label": self.when_label(),
+        }
+
+    def apply_settings(
+        self,
+        *,
+        stake_usd: Any,
+        hours: Any,
+        weekdays: Any,
+        sessions: Any,
+        invert_hours: Any,
+    ) -> None:
+        stake = parse_stake(stake_usd)
+        allowed_hours = parse_hours(hours, field="hours")
+        allowed_days = parse_weekdays(weekdays)
+        allowed_markets = parse_sessions(sessions)
+        flipped_hours = parse_hours(invert_hours, field="invert_hours")
+        self.stake_usd = stake
+        self.hours = allowed_hours
+        self.weekdays = allowed_days
+        self.sessions = allowed_markets
+        self.invert_hours = flipped_hours
+
+    def settings_payload(self) -> dict[str, Any]:
+        return {
+            "stake_usd": self.stake_usd,
+            **self.when_payload(),
+            "catalog": session_catalog(),
         }
 
 
@@ -173,6 +225,100 @@ def env(name: str, default: str | None = None) -> str | None:
     return value or None
 
 
+def parse_stake(value: Any) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("stake_usd must be a positive number")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("stake_usd must be a positive number") from exc
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError("stake_usd must be positive")
+    cents = round(number * 100)
+    if abs(number * 100 - cents) > 1e-6:
+        raise ValueError("stake_usd must have at most 2 decimal places")
+    return cents / 100
+
+
+def parse_hours(value: Any, *, field: str) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError(f"{field} must be a list")
+    out: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        if isinstance(item, bool):
+            raise ValueError(f"unknown hour in {field}: {item}")
+        if isinstance(item, int):
+            hour = item
+        elif isinstance(item, float) and item.is_integer():
+            hour = int(item)
+        elif isinstance(item, str) and item.strip().isdigit():
+            hour = int(item.strip())
+        else:
+            raise ValueError(f"unknown hour in {field}: {item}")
+        if hour < 0 or hour > 23:
+            raise ValueError(f"unknown hour in {field}: {hour}")
+        if hour not in seen:
+            seen.add(hour)
+            out.append(hour)
+    return tuple(out) or None
+
+
+def parse_weekdays(value: Any) -> tuple[int, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError("weekdays must be a list")
+    out: list[int] = []
+    seen: set[int] = set()
+    for item in value:
+        if isinstance(item, bool):
+            raise ValueError(f"unknown weekday: {item}")
+        day: int | None
+        if isinstance(item, str):
+            key = item.strip().lower()
+            day = WEEKDAY_INDEX.get(key[:3]) if key else None
+            if day is None:
+                day = WEEKDAY_INDEX.get(key)
+        elif isinstance(item, int) or (isinstance(item, float) and item.is_integer()):
+            day = int(item)
+        else:
+            day = None
+        if day is None or day < 0 or day > 6:
+            raise ValueError(f"unknown weekday: {item}")
+        if day not in seen:
+            seen.add(day)
+            out.append(day)
+    return tuple(out) or None
+
+
+def parse_sessions(value: Any) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError("sessions must be a list")
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        key = str(item).strip().lower().replace(" ", "_")
+        key = SESSION_ALIASES.get(key, key)
+        if key not in SESSION_KEYS:
+            raise ValueError(f"unknown market: {item}")
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return tuple(out) or None
+
+
+def _toml_number(value: float) -> str:
+    rounded = round(float(value), 2)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
 def _toml_array(values: list[Any]) -> str:
     if not values:
         return "[]"
@@ -183,12 +329,18 @@ def _toml_array(values: list[Any]) -> str:
 
 
 def persist_when(path: Path, cfg: TraderConfig) -> None:
-    """Rewrite hours / weekdays / sessions in config.toml, keep the rest intact."""
+    """Rewrite the saved schedule, stake, and invert hours. Keep every other line."""
+    persist_settings(path, cfg)
+
+
+def persist_settings(path: Path, cfg: TraderConfig) -> None:
     text = path.read_text(encoding="utf-8")
     updates = {
+        "stake_usd": _toml_number(cfg.stake_usd),
         "hours": _toml_array(dump_hours(cfg.hours)),
         "weekdays": _toml_array(dump_weekdays(cfg.weekdays)),
         "sessions": _toml_array(dump_sessions(cfg.sessions)),
+        "invert_hours": _toml_array(dump_hours(cfg.invert_hours)),
     }
     for key, value in updates.items():
         line = f"{key} = {value}"

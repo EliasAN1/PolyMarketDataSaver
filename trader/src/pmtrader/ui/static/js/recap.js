@@ -1,12 +1,12 @@
-import { fmtUsd } from "./stats.js?v=10";
-import { fmtTs, slugLabel, slugUrl, fmtOdds } from "./format.js?v=10";
-import { effectiveWon, isStatClosed, tradePnl } from "./parse.js?v=10";
+import { fmtUsd } from "./stats.js?v=19";
+import { fmtTs, slugLabel, slugUrl, fmtOdds, outcomeBadge } from "./format.js?v=19";
+import { effectiveWon, isStatClosed, tradePnl, countsInStats } from "./parse.js?v=19";
 
 export function computeRecap(trades, filterFn = () => true) {
   const list = trades.filter(filterFn);
   const recent = [...list].sort((a, b) => (b.entryTs ?? 0) - (a.entryTs ?? 0)).slice(0, 5);
   const closed = list
-    .filter(isStatClosed)
+    .filter((t) => isStatClosed(t) && countsInStats(t))
     .sort((a, b) => (a.entryTs ?? 0) - (b.entryTs ?? 0));
 
   let streakType = null;
@@ -23,7 +23,7 @@ export function computeRecap(trades, filterFn = () => true) {
     }
   }
 
-  const last5Closed = recent.filter(isStatClosed);
+  const last5Closed = recent.filter((t) => isStatClosed(t) && countsInStats(t));
   const last5Net = last5Closed.reduce((sum, t) => sum + (tradePnl(t) ?? 0), 0);
   const last5Wins = last5Closed.filter((t) => effectiveWon(t)).length;
   const last5Losses = last5Closed.length - last5Wins;
@@ -75,9 +75,7 @@ export function renderRecapHtml(recap) {
     .map((t) => {
       const side = (t.side ?? "up").toUpperCase();
       const closed = isStatClosed(t);
-      const won = effectiveWon(t);
-      const outcomeCls = t.rejected ? "fail" : !closed ? "open" : won ? "win" : "loss";
-      const outcomeBadge = t.rejected ? "FAIL" : !closed ? "OPEN" : won ? "WIN" : "LOSS";
+      const badge = outcomeBadge(t);
       const time = fmtTs(t.entryTs);
       const market = slugLabel(t.slug);
       const href = t.slug ? slugUrl(t.slug) : "#";
@@ -86,7 +84,9 @@ export function renderRecapHtml(recap) {
         ? (t.errorShort || "rejected")
         : closed
           ? fmtUsd(pnlVal)
-          : "In Progress";
+          : t.unmatched
+            ? "No fill"
+            : "In Progress";
       const pnlCls = t.rejected ? "down" : pnlVal != null ? (pnlVal >= 0 ? "up" : "down") : "";
       const fill = fmtOdds(t.fillPrice);
       const leftSec = !t.rejected && !closed ? remainingSeconds(t.windowEnd) : null;
@@ -98,7 +98,7 @@ export function renderRecapHtml(recap) {
       return `
         <a class="execution-card" href="${href}" target="_blank" rel="noopener noreferrer">
           <div class="execution-card-left">
-            <span class="outcome-pill ${outcomeCls}">${outcomeBadge}</span>
+            <span class="outcome-pill ${badge.pill}">${badge.label}</span>
             <div class="execution-meta">
               <strong class="execution-market">${market}</strong>
               <div class="execution-subline">

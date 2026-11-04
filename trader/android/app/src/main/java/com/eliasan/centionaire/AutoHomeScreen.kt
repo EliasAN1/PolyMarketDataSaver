@@ -25,6 +25,7 @@ class AutoHomeScreen(carContext: CarContext) : Screen(carContext) {
     init {
         lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
+                WatchScheduler.requestCheck(carContext)
                 handler.removeCallbacks(refresh)
                 handler.post(refresh)
             }
@@ -66,7 +67,10 @@ class AutoHomeScreen(carContext: CarContext) : Screen(carContext) {
                     .addAction(
                         Action.Builder()
                             .setTitle(carContext.getString(R.string.auto_refresh))
-                            .setOnClickListener { invalidate() }
+                            .setOnClickListener {
+                                WatchScheduler.requestCheck(carContext)
+                                invalidate()
+                            }
                             .build(),
                     )
                     .build(),

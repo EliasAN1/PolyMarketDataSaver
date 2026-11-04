@@ -74,6 +74,15 @@ class LiveSnapshot:
     prev_up_mid: float | None = None
     prev_down_mid: float | None = None
     in_watch: bool = False
+    # Cached once per window from the last 5m candle that closed before the open.
+    # atr_block is a skip reason when the series is missing, stale, or gapped.
+    atr_value: float | None = None
+    atr_mean: float | None = None
+    atr_ratio: float | None = None
+    atr_block: str | None = None
+    # A full signal arrived before min_delay_seconds. That window stays closed:
+    # the same cross must not be sent once the clock passes the delay.
+    early_cross: bool = False
 
     def reset_window(
         self,
@@ -102,6 +111,11 @@ class LiveSnapshot:
         for name in VENUE_SOURCES:
             self.spots[name] = None
             self.spot_ts[name] = None
+        self.atr_value = None
+        self.atr_mean = None
+        self.atr_ratio = None
+        self.atr_block = None
+        self.early_cross = False
         self.clear_odds_memory()
 
     def set_ptb(self, value: str | float | None, source: str) -> None:

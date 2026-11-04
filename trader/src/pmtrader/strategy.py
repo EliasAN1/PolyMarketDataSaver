@@ -10,10 +10,14 @@ so a dead socket cannot be paired with a live book.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from typing import Any
 
 from pmtrader.config import TraderConfig
 from pmtrader.snapshot import LiveSnapshot
+
+logger = logging.getLogger(__name__)
 
 Side = str  # "up" | "down"
 
@@ -24,13 +28,14 @@ class Decision:
     reason: str
     ask: float | None
     limit: float
+    inverted: bool = False
 
     @property
     def ok(self) -> bool:
         return self.side is not None and self.reason == "ok"
 
 
-def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision:
+def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float, day: Any | None = None) -> Decision:
     cap = cfg.effective_fak_limit()
     if snap.window_end <= 0 or snap.window_start <= 0:
         snap.clear_odds_memory()
@@ -45,6 +50,11 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision
     if not cfg.when_ok(snap.window_start):
         snap.clear_odds_memory()
         return Decision(None, "outside_when", None, cap)
+    if day is not None:
+        reason = day.entry_block_reason(snap.window_start)
+        if reason:
+            snap.clear_odds_memory()
+            return Decision(None, str(reason), None, cap)
     if not round(from_s) <= t <= round(to_s):
         snap.clear_odds_memory()
         return Decision(None, "outside_elapsed", None, cap)
@@ -96,10 +106,64 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float) -> Decision
     if ask > cap:
         return skip("ask_above_cap", ask)
 
+    # seconds_since_window_open = now - (window_end - 300). A full signal inside
+    # the delay closes the window. The old fill-time result was about signals
+    # that first crossed after 10s, so this cross is not released later.
+    elapsed = now_s - (float(snap.window_end) - 300.0)
+    if cfg.min_delay_seconds > 0 and (snap.early_cross or elapsed <= cfg.min_delay_seconds):
+        snap.early_cross = True
+        snap.remember_mids()
+        reason = "early_cross" if elapsed > cfg.min_delay_seconds else "too_early"
+        _log_signal(snap, elapsed, f"skipped {reason}")
+        return Decision(None, reason, ask, cap)
+
+    atr_reason = _atr_block_reason(snap, cfg)
+    if atr_reason is not None:
+        snap.remember_mids()
+        _log_signal(snap, elapsed, f"skipped {atr_reason}")
+        return Decision(None, atr_reason, ask, cap)
+
     snap.remember_mids()
+    order_side = side
+    inverted = cfg.hour_is_inverted(snap.window_start)
+    if inverted:
+        order_side = "down" if side == "up" else "up"
+        opposite = snap.ask_for(order_side)
+        if opposite is None or not (0 < opposite <= cap):
+            _log_signal(snap, elapsed, "skipped invert_ask")
+            return Decision(None, "invert_ask", opposite, cap, inverted=True)
+        ask = opposite
+    _log_signal(snap, elapsed, "traded inverted" if inverted else "traded")
     # Marketable FAK: one tick above the observed ask, never above the cap.
     limit = min(ask + float(cfg.tick_size), cap)
-    return Decision(side, "ok", ask, limit)
+    return Decision(order_side, "ok", ask, limit, inverted=inverted)
+
+
+def _atr_block_reason(snap: LiveSnapshot, cfg: TraderConfig) -> str | None:
+    if snap.atr_block:
+        return snap.atr_block
+    if snap.atr_ratio is None or snap.atr_value is None or snap.atr_mean is None:
+        return "atr_missing"
+    if snap.atr_ratio > cfg.atr_mean_max:
+        return "atr_high"
+    return None
+
+
+def _fmt(value: float | None) -> str:
+    return "-" if value is None else f"{value:.6f}"
+
+
+def _log_signal(snap: LiveSnapshot, elapsed: float, decision: str) -> None:
+    window_id = snap.slug if snap.slug and snap.slug != "-" else snap.window_start
+    logger.info(
+        "signal window=%s seconds_since_window_open=%.3f ATR=%s ATR_mean=%s ratio=%s decision=%s",
+        window_id,
+        elapsed,
+        _fmt(snap.atr_value),
+        _fmt(snap.atr_mean),
+        _fmt(snap.atr_ratio),
+        decision,
+    )
 
 
 def _distance_ok(abs_dist: float, cfg: TraderConfig) -> bool:

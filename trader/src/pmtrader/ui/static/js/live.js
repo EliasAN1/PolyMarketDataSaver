@@ -54,7 +54,23 @@ const SKIP_STATUS = {
   no_twap: { label: "TWAP", icon: "pulse", hint: "No TWAP yet" },
   twap_disagree: { label: "TWAP", icon: "pulse", hint: "TWAP disagrees with Binance" },
   venues: { label: "Venues", icon: "grid", hint: "Not enough venues" },
+  too_early: { label: "Delay", icon: "clock", hint: "Signal in the open delay closes this window" },
+  early_cross: { label: "Delay", icon: "clock", hint: "This window already crossed before the delay" },
+  atr_high: { label: "ATR", icon: "pulse", hint: "ATR above the mean cap" },
+  atr_missing: { label: "ATR", icon: "pulse", hint: "No ATR reading yet" },
+  stopped_for_day: { label: "Stopped", icon: "pause", hint: "Stopped for today" },
+  skipped_hour: { label: "Skipped", icon: "clock", hint: "This hour is skipped today" },
+  invert_ask: { label: "Invert", icon: "shield", hint: "Opposite ask is above the cap" },
 };
+
+function againstSignalNote(data) {
+  if (!data?.inverted || String(data.state || "").endsWith("invert_ask")) return "";
+  const buy = String(data.side || "").toUpperCase();
+  if (data.state === "ready" || data.traded) {
+    return buy ? `Buying ${buy} against the signal` : "Buying against the signal";
+  }
+  return "This hour buys against the signal";
+}
 
 function setBadge(el, text, cls) {
   if (!el) return;
@@ -115,39 +131,128 @@ function fmtOdds(val) {
   return Number(val).toFixed(2);
 }
 
-const CHECKLIST_KEY = "pmtrader-checks-collapsed";
 let checklistWired = false;
-
-function applyChecklistCollapsed(root, collapsed) {
-  const box = root.getElementById("strategy-checklist");
-  const toggle = root.getElementById("checklist-toggle");
-  if (!box) return;
-  box.classList.toggle("is-collapsed", collapsed);
-  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
-}
-
 function wireChecklistToggle(root) {
   if (checklistWired) return;
   const toggle = root.getElementById("checklist-toggle");
-  const box = root.getElementById("strategy-checklist");
-  if (!toggle || !box) return;
+  if (!toggle) return;
   checklistWired = true;
-  let collapsed = false;
-  try {
-    collapsed = localStorage.getItem(CHECKLIST_KEY) === "1";
-  } catch {
-    collapsed = false;
-  }
-  applyChecklistCollapsed(root, collapsed);
-  toggle.addEventListener("click", () => {
-    const next = !box.classList.contains("is-collapsed");
-    applyChecklistCollapsed(root, next);
-    try {
-      localStorage.setItem(CHECKLIST_KEY, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
+  toggle.addEventListener("click", () => document.dispatchEvent(new CustomEvent("ui:checks")));
+}
+
+let dayWired = false;
+function wireDayControls(root) {
+  if (dayWired) return;
+  const btn = root.getElementById("day-toggle-btn");
+  const hours = root.getElementById("day-hours");
+  const tomorrowBtn = root.getElementById("day-tomorrow-toggle-btn");
+  const tomorrowHours = root.getElementById("day-tomorrow-hours");
+  if (!btn || !hours) return;
+  dayWired = true;
+  btn.addEventListener("click", () => {
+    const stopped = btn.dataset.stopped === "1";
+    postDay(root, { action: stopped ? "start" : "stop", when: "today" });
   });
+  hours.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("[data-hour]");
+    if (!chip) return;
+    postDay(root, { action: "toggle_hour", hour: Number(chip.dataset.hour), when: "today" });
+  });
+  tomorrowBtn?.addEventListener("click", () => {
+    const stopped = tomorrowBtn.dataset.stopped === "1";
+    postDay(root, { action: stopped ? "start" : "stop", when: "tomorrow" });
+  });
+  tomorrowHours?.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("[data-hour]");
+    if (!chip) return;
+    postDay(root, { action: "toggle_hour", hour: Number(chip.dataset.hour), when: "tomorrow" });
+  });
+}
+
+async function postDay(root, body) {
+  const wrap = root.getElementById("day-controls");
+  wrap?.classList.add("is-busy");
+  try {
+    const res = await fetch("/api/day", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return;
+    const live = await fetch("/api/live", { cache: "no-store" });
+    if (live.ok) renderLive(await live.json(), root);
+  } catch {
+    /* keep the last painted state */
+  } finally {
+    wrap?.classList.remove("is-busy");
+  }
+}
+
+function hourLabel(hour) {
+  return `${String(hour).padStart(2, "0")}`;
+}
+
+function hourChips(scheduled, skipped, running, { nowHour = null, when = "today" } = {}) {
+  return scheduled.map((hour) => {
+    const off = skipped.has(hour);
+    const now = nowHour != null && hour === nowHour;
+    const cls = ["day-hour", off ? "is-skipped" : "", now ? "is-now" : ""].filter(Boolean).join(" ");
+    const label = hourLabel(hour);
+    const title = off
+      ? `Skip ${label} is on — tap to trade this hour ${when}`
+      : `Tap to skip ${label} ${when}`;
+    return `<button type="button" class="${cls}" data-hour="${hour}" ${running ? "" : "disabled"} title="${esc(title)}">${label}</button>`;
+  }).join("");
+}
+
+function paintDayLayer(btn, status, hoursEl, layer, scheduled, running, { nowHour = null, when = "today", startLabel, stopLabel, defaultStatus } = {}) {
+  if (!btn || !status || !hoursEl) return;
+  const stopped = Boolean(layer?.stopped);
+  const skipped = new Set((layer?.skip_hours || []).map(Number));
+  btn.disabled = !running;
+  btn.dataset.stopped = stopped ? "1" : "0";
+  btn.textContent = stopped ? startLabel : stopLabel;
+  btn.classList.toggle("is-stopped", stopped);
+  status.textContent = layer?.status || defaultStatus;
+  status.classList.toggle("is-off", stopped);
+  hoursEl.innerHTML = hourChips(scheduled, skipped, running, { nowHour, when });
+}
+
+function paintDayControls(root, data) {
+  const wrap = root.getElementById("day-controls");
+  if (!wrap) return;
+
+  const running = Boolean(data?.running);
+  wrap.classList.toggle("is-offline", !running);
+  const day = data?.day || {};
+  const scheduled = Array.isArray(data?.config?.hours) ? data.config.hours.map(Number).filter((h) => h >= 0 && h <= 23) : [];
+  const nowHour = new Date().getHours();
+
+  paintDayLayer(
+    root.getElementById("day-toggle-btn"),
+    root.getElementById("day-status"),
+    root.getElementById("day-hours"),
+    day,
+    scheduled,
+    running,
+    { nowHour, when: "today", startLabel: "Start", stopLabel: "Stop for today", defaultStatus: "Trading" },
+  );
+  paintDayLayer(
+    root.getElementById("day-tomorrow-toggle-btn"),
+    root.getElementById("day-tomorrow-status"),
+    root.getElementById("day-tomorrow-hours"),
+    day.tomorrow || {},
+    scheduled,
+    running,
+    { when: "tomorrow", startLabel: "Trade tomorrow", stopLabel: "Stop tomorrow", defaultStatus: "Trading tomorrow" },
+  );
+}
+
+export function oddsSplit(up, down) {
+  if (up == null || down == null || up === "" || down === "") return null;
+  const u = Number(up), d = Number(down);
+  if (!Number.isFinite(u) || !Number.isFinite(d) || u < 0 || d < 0 || u > 1 || d > 1 || u + d <= 0) return null;
+  return u / (u + d) * 100;
 }
 
 function paintBrandLive(root, { cls = "", title = "Live" } = {}) {
@@ -156,10 +261,16 @@ function paintBrandLive(root, { cls = "", title = "Live" } = {}) {
   brand.classList.remove("is-offline", "is-waiting", "is-failed");
   if (cls) brand.classList.add(cls);
   brand.title = title;
+  const connection = root.getElementById("connection-label");
+  if (connection) { connection.textContent = cls === "is-offline" ? "Offline" : cls === "is-failed" ? "Order failed" : "Connected"; connection.classList.toggle("is-offline", cls === "is-offline"); }
+  const hint = root.getElementById("live-state-hint");
+  if (hint) hint.textContent = root.getElementById("radar-state-tag")?.title || title;
 }
 
 export function renderLive(data, root = document) {
   wireChecklistToggle(root);
+  wireDayControls(root);
+  paintDayControls(root, data);
   const radarTimeLeft = root.getElementById("radar-time-left");
   const radarTimeBadge = root.getElementById("radar-time-badge");
   const radarStateTag = root.getElementById("radar-state-tag");
@@ -169,9 +280,17 @@ export function renderLive(data, root = document) {
     setStateTag(radarStateTag, { label: "Off", icon: "power", hint: "Trader offline" });
     setOrderNote(root.getElementById("radar-order-note"), null, false);
     paintBrandLive(root, { cls: "is-offline", title: "Offline" });
+    root.getElementById("radar-pillars")?.classList.add("is-stale");
+    const hint = root.getElementById("live-state-hint");
+    if (hint) hint.textContent = "Trader offline · prices below may be out of date";
+    const grid = root.getElementById("radar-checks-grid");
+    if (grid) grid.innerHTML = '<p class="compact-empty">Checks unavailable while the trader is offline.</p>';
+    const summary = root.getElementById("checklist-summary-badge");
+    if (summary) summary.textContent = "Offline";
     return;
   }
 
+  root.getElementById("radar-pillars")?.classList.toggle("is-stale", Boolean(data.stale));
   const secondsLeft = data.seconds_left ?? 0;
   const duration = 300; // standard 5m window duration
   const elapsed = Math.max(0, duration - secondsLeft);
@@ -234,6 +353,20 @@ export function renderLive(data, root = document) {
       skip.label = v;
       skip.hint = reason === "no_btc" ? `No ${v} feed` : `${v} distance out of range`;
     }
+    if (reason === "too_early" || reason === "early_cross") {
+      const delay = Math.round(Number(data.config?.min_delay_seconds ?? 10));
+      skip.hint = reason === "early_cross"
+        ? `Crossed before ${delay}s, so this window stays closed`
+        : `Signal in the first ${delay}s closes this window`;
+    }
+    if (reason === "atr_high") {
+      const cap = data.config?.atr_mean_max;
+      skip.hint = cap != null ? `ATR above ${Number(cap)}x mean` : "ATR above the mean cap";
+    }
+    if (reason === "invert_ask") {
+      const cap = data.config?.fak_limit;
+      skip.hint = cap != null ? `Opposite ask is above ${Number(cap).toFixed(2)}` : "Opposite ask is above the cap";
+    }
     setStateTag(radarStateTag, { cls: "state-skip", ...skip });
     brandLive = { cls: "is-waiting", title: skip.hint || "Waiting" };
   } else {
@@ -243,6 +376,11 @@ export function renderLive(data, root = document) {
 
   setOrderNote(root.getElementById("radar-order-note"), data, traded);
   paintBrandLive(root, brandLive);
+  const against = againstSignalNote(data);
+  if (against) {
+    const hint = root.getElementById("live-state-hint");
+    if (hint) hint.textContent = hint.textContent ? `${hint.textContent} · ${against}` : against;
+  }
 
   // 2. Window Timeline Progress
   const pct = Math.min(100, Math.max(0, (elapsed / duration) * 100));
@@ -330,12 +468,17 @@ export function renderLive(data, root = document) {
   if (upBox) upBox.classList.toggle("is-selected", side === "up");
   if (downBox) downBox.classList.toggle("is-selected", side === "down");
 
-  if (oddsRatioFill && data.up_ask != null && data.down_ask != null) {
-    const total = (data.up_ask || 0.5) + (data.down_ask || 0.5);
-    const upPct = total > 0 ? (data.up_ask / total) * 100 : 50;
-    oddsRatioFill.style.height = `${upPct}%`;
-    oddsRatioFill.style.width = `${upPct}%`;
+  const upPct = oddsSplit(data.up_mid, data.down_mid);
+  const ratio = root.getElementById("odds-ratio-bar");
+  if (oddsRatioFill) oddsRatioFill.style.width = `${upPct ?? 0}%`;
+  if (ratio) {
+    ratio.classList.toggle("is-unavailable", upPct == null);
+    ratio.setAttribute("aria-label", upPct == null ? "Market odds unavailable" : `Relative mid prices: Up ${upPct.toFixed(1)}%, Down ${(100 - upPct).toFixed(1)}%`);
   }
+  const upPercent = root.getElementById("odds-up-percent");
+  const downPercent = root.getElementById("odds-down-percent");
+  if (upPercent) upPercent.textContent = upPct == null ? "—" : `${Math.round(upPct)}%`;
+  if (downPercent) downPercent.textContent = upPct == null ? "—" : `${100 - Math.round(upPct)}%`;
 
   if (oddsBandBadge && data.config) {
     const trigger = data.config.trigger_band ?? `${data.config.odds_min?.toFixed(2)}-${data.config.odds_max?.toFixed(2)}`;

@@ -1,4 +1,4 @@
-import { effectiveWon, formatDayLabel, isStatClosed, tradePnl } from "./parse.js?v=19";
+import { effectiveWon, formatDayLabel, isStatClosed, tradePnl, countsInStats } from "./parse.js?v=19";
 import { fmtUsd } from "./stats.js?v=19";
 import { slugLabel } from "./format.js?v=19";
 
@@ -50,7 +50,7 @@ function paintKey() {
 function buildDayMap(list) {
   const map = new Map();
   for (const t of list) {
-    if (!isStatClosed(t) || !t.dayKey) continue;
+    if (!isStatClosed(t) || !countsInStats(t) || !t.dayKey) continue;
     let row = map.get(t.dayKey);
     if (!row) {
       row = { dayKey: t.dayKey, net: 0, wins: 0, losses: 0, trades: [] };
@@ -67,7 +67,8 @@ function buildDayMap(list) {
 function paint() {
   if (!root) return;
   lastPaintKey = paintKey();
-  root.innerHTML = monthHtml() + (state.selectedDay ? dayDetailHtml(state.selectedDay) : "");
+  root.classList.toggle("has-selection", Boolean(state.selectedDay));
+  root.innerHTML = `<div class="cal-month">${monthHtml()}</div>` + (state.selectedDay ? dayDetailHtml(state.selectedDay) : "");
   const scroller = root.querySelector(".hour-pills");
   const active = scroller?.querySelector(".hour-pill.is-active");
   if (scroller && active) {
@@ -188,11 +189,11 @@ function dayDetailHtml(dayKey) {
   const nextDisabled = traded.length === 0 || hourIdx === traded.length - 1 ? "disabled" : "";
 
   const pills = [
-    `<button type="button" class="hour-pill is-all${hour == null ? " is-active" : ""}" data-cal-hour="all">All<span class="hour-pill-net">${row.trades.length}</span></button>`,
+    `<button type="button" class="hour-pill is-all${hour == null ? " is-active" : ""}" role="tab" aria-selected="${hour == null}" data-cal-hour="all">All<span class="hour-pill-net">${row.trades.length}</span></button>`,
     ...traded.map((h) => {
       const tone = h.net >= 0 ? "is-up" : "is-down";
       const on = hour === h.hour ? " is-active" : "";
-      return `<button type="button" class="hour-pill ${tone}${on}" data-cal-hour="${h.hour}">
+      return `<button type="button" class="hour-pill ${tone}${on}" role="tab" aria-selected="${hour === h.hour}" data-cal-hour="${h.hour}">
         <span class="hour-pill-time">${pad(h.hour)}:00</span>
         <span class="hour-pill-net mono">${fmtUsd(h.net)}</span>
       </button>`;
@@ -219,6 +220,7 @@ function dayDetailHtml(dayKey) {
       <strong class="mono ${row.net >= 0 ? "up" : "down"}">${fmtUsd(row.net)}</strong>
       <span>${row.wins}W · ${row.losses}L · ${row.trades.length} closed</span>
     </div>
+    <p class="cal-timezone">Hours in your local time</p>
     <div class="hour-nav">
       <button type="button" class="hour-step" data-cal-hour-step="-1" aria-label="Previous hour" ${prevDisabled}>‹</button>
       <div class="hour-pills" role="tablist" aria-label="Hours with trades">${pills}</div>

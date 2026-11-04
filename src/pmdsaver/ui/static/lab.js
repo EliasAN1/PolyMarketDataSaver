@@ -964,8 +964,12 @@ function onSweepClick(event) {
  * Optimizer worker: coarse grid search over enabled filters
  * ------------------------------------------------------------------ */
 
+const WORKER_URL = "/static/lab_worker.js?v=8";
+const VERIFY_RANDOM = 24;
+
 function initWorker() {
-  state.worker = new Worker("/static/lab_worker.js?v=7");
+  state.worker = new Worker(WORKER_URL);
+  state.pending = new Map();
   state.worker.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === "loaded") {
@@ -978,8 +982,89 @@ function initWorker() {
       renderBestResults(msg.results, msg.scanned, msg.total);
       $("findBestBtn").disabled = false;
       $("searchProgress").hidden = true;
+    } else if (msg.id != null && state.pending.has(msg.id)) {
+      const resolve = state.pending.get(msg.id);
+      state.pending.delete(msg.id);
+      resolve(msg);
     }
   };
+}
+
+let requestSeq = 0;
+
+function askPrimary(message) {
+  const id = ++requestSeq;
+  return new Promise((resolve) => {
+    state.pending.set(id, resolve);
+    state.worker.postMessage(Object.assign({ id }, message));
+  });
+}
+
+function searchPool() {
+  if (!state.pool) {
+    const n = Math.max(1, Math.min(12, (navigator.hardwareConcurrency || 4) - 1));
+    state.pool = Array.from({ length: n }, () => new Worker(WORKER_URL));
+  }
+  return state.pool;
+}
+
+function runPoolSearch(prep, params, dims, minTrades, onProgress) {
+  const pool = searchPool();
+  const done = new Array(pool.length).fill(0);
+  return Promise.all(
+    pool.map((worker, i) => new Promise((resolve, reject) => {
+      const id = ++requestSeq;
+      worker.onerror = (err) => reject(err);
+      worker.onmessage = (event) => {
+        const msg = event.data || {};
+        if (msg.id !== id) return;
+        if (msg.type === "fastProgress") {
+          done[i] = msg.done;
+          onProgress(done.reduce((a, b) => a + b, 0));
+        } else if (msg.type === "fastResult") {
+          done[i] = msg.done;
+          onProgress(done.reduce((a, b) => a + b, 0));
+          resolve(msg.top);
+        }
+      };
+      worker.postMessage({
+        type: "fastSearch",
+        id,
+        prep,
+        baseParams: params,
+        dims,
+        start: i,
+        step: pool.length,
+        minTrades,
+        limit: 10,
+      });
+    })),
+  );
+}
+
+/** Re-run sampled combos through the original evaluate(); any difference is reported. */
+async function verifyAgainstEngine(prep, plan, params, top) {
+  const checks = top.map((r) => ({ oi: r.oi, pi: r.pi }));
+  for (let i = 0; i < VERIFY_RANDOM && plan.valid > 0; i++) {
+    checks.push({
+      oi: Math.floor(Math.random() * plan.others.length),
+      pi: Math.floor(Math.random() * plan.pairs.length),
+    });
+  }
+  const buf = LabEngine.newScoreBuffers(plan);
+  const fast = checks.map(({ oi, pi }) => {
+    LabEngine.fastScoreOther(prep, plan, params, oi, buf);
+    return { netPnl: buf.pnl[pi], trades: buf.trades[pi], wins: buf.wins[pi] };
+  });
+  const list = checks.map(({ oi, pi }) => LabEngine.comboParams(params, plan, oi, pi));
+  const { summaries } = await askPrimary({ type: "evaluate", list });
+  const mismatches = [];
+  summaries.forEach((s, i) => {
+    if (s.netPnl !== fast[i].netPnl || s.trades !== fast[i].trades || s.wins !== fast[i].wins) {
+      mismatches.push({ params: list[i], fast: fast[i], engine: { netPnl: s.netPnl, trades: s.trades, wins: s.wins } });
+    }
+  });
+  return { checked: checks.length, mismatches, topSummaries: summaries.slice(0, top.length), topParams: list.slice(0, top.length) };
 }
 
 const SEARCH_DIMS = {
@@ -1011,7 +1096,47 @@ function findBestSettings() {
   $("searchProgressFill").style.width = "0%";
   $("searchStatus").textContent = "Searching…";
   const minTrades = Math.max(15, Math.round(state.windows.length * 0.03));
-  state.worker.postMessage({ type: "search", baseParams: params, dims, minTrades });
+  const plan = LabEngine.searchPlan(params, dims);
+  if (!LabEngine.fastSearchSupported(params, plan)) {
+    state.worker.postMessage({ type: "search", baseParams: params, dims, minTrades });
+    return;
+  }
+  runFastSearch(params, dims, plan, minTrades).catch((err) => {
+    $("searchStatus").textContent = `Search failed: ${err && err.message ? err.message : err}`;
+    $("findBestBtn").disabled = false;
+    $("searchProgress").hidden = true;
+  });
+}
+
+async function runFastSearch(params, dims, plan, minTrades) {
+  const t0 = performance.now();
+  const skipped = plan.total - plan.valid;
+  $("searchStatus").textContent = "Preparing tape…";
+  const { prep } = await askPrimary({ type: "prepare", baseParams: params, dims });
+  const tops = await runPoolSearch(prep, params, dims, minTrades, (done) => {
+    const pct = plan.valid ? Math.round((done / plan.valid) * 100) : 100;
+    $("searchProgressFill").style.width = `${pct}%`;
+    $("searchStatus").textContent = `${done.toLocaleString()} / ${plan.valid.toLocaleString()} combinations`;
+  });
+  const top = LabEngine.mergeTop(tops, 10);
+  const secs = ((performance.now() - t0) / 1000).toFixed(1);
+  $("searchStatus").textContent = `Checking results against the Lab engine…`;
+  const check = await verifyAgainstEngine(prep, plan, params, top);
+  const results = top.map((r, i) => ({ params: check.topParams[i], summary: check.topSummaries[i] }));
+  renderBestResults(results, plan.valid, plan.valid);
+  const note = `${plan.valid.toLocaleString()} combinations in ${secs}s`
+    + (skipped ? ` (${skipped.toLocaleString()} impossible ones skipped)` : "");
+  const status = $("searchStatus");
+  if (check.mismatches.length) {
+    console.error("Fast search disagreed with LabEngine.evaluate", check.mismatches);
+    status.textContent = `${note} · WARNING: ${check.mismatches.length} of ${check.checked} checks differ from the Lab engine — ranking not trusted (details in console)`;
+    status.classList.add("down");
+  } else {
+    status.textContent = `${note} · ${check.checked} checked against the Lab engine: identical`;
+    status.classList.remove("down");
+  }
+  $("findBestBtn").disabled = false;
+  $("searchProgress").hidden = true;
 }
 
 function fmtMinClock(min) {

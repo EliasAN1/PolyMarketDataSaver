@@ -58,10 +58,6 @@ class TraderConfig:
     min_venues: int = 2
     stake_usd: float = 10.0
     min_seconds_left: float = 3.0
-    # Hold a signal that appears in the first N seconds and recheck it later.
-    min_delay_seconds: float = 10.0
-    # Wilder ATR(14) divided by its 288-candle mean. Skip the window above this.
-    atr_mean_max: float = 1.125
     tick_size: str = "0.01"
     # Empty / omitted = no clock filter (trade every hour / day / session).
     # Hours 0-23 local. Weekdays 0=Sun..6=Sat or Mon,Tue,... Sessions: tokyo_open,
@@ -90,12 +86,6 @@ class TraderConfig:
             raise ValueError("min_venues must be >= 1")
         if self.btc_source not in BTC_SOURCES:
             raise ValueError(f"btc_source must be one of {', '.join(BTC_SOURCES)}; got {self.btc_source!r}")
-        self.min_delay_seconds = float(self.min_delay_seconds)
-        self.atr_mean_max = float(self.atr_mean_max)
-        if self.min_delay_seconds < 0:
-            raise ValueError("min_delay_seconds must be >= 0")
-        if self.atr_mean_max <= 0:
-            raise ValueError("atr_mean_max must be > 0")
         if self.min_btc_away < 0:
             raise ValueError("min_btc_away must be >= 0")
         if self.max_btc_away is not None:

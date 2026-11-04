@@ -1,26 +1,38 @@
-/* Web Worker: coarse grid search over enabled entry filters.
- * Keeps a copy of the tape in worker memory so "Find best settings" never
- * re-sends the (large) tape payload — only params are exchanged after the
- * initial load.
+/* Web Worker for "Find best settings".
+ *
+ * One primary worker keeps a copy of the tape (so the tape payload is sent
+ * once) and serves: "prepare" (reduce the tape for the fast search),
+ * "evaluate" (full LabEngine.evaluate for given params) and "search" (the
+ * original one-combo-at-a-time scan, used when the fast path does not cover
+ * the enabled filters). Pool workers only receive the reduced tape and run
+ * "fastSearch" over their share of the grid.
  */
-importScripts("/static/lab_engine.js?v=7");
+importScripts("/static/lab_engine.js?v=8");
 
 let windows = [];
-
-function buildCandidates(dim) {
-  const values = [];
-  const steps = Math.max(1, Math.round((dim.max - dim.min) / dim.step));
-  for (let i = 0; i <= steps; i++) {
-    values.push(Math.round((dim.min + i * dim.step) * 1000) / 1000);
-  }
-  return values;
-}
 
 self.onmessage = (event) => {
   const msg = event.data || {};
   if (msg.type === "load") {
     windows = msg.windows || [];
     self.postMessage({ type: "loaded", count: windows.length });
+  } else if (msg.type === "prepare") {
+    const plan = self.LabEngine.searchPlan(msg.baseParams, msg.dims || {});
+    const prep = self.LabEngine.prepareSearch(windows, msg.baseParams, plan);
+    self.postMessage({ type: "prepared", id: msg.id, prep }, self.LabEngine.prepTransferables(prep));
+  } else if (msg.type === "evaluate") {
+    const summaries = (msg.list || []).map((params) => self.LabEngine.evaluate(windows, params).summary);
+    self.postMessage({ type: "evaluated", id: msg.id, summaries });
+  } else if (msg.type === "fastSearch") {
+    const plan = self.LabEngine.searchPlan(msg.baseParams, msg.dims || {});
+    const { top, done } = self.LabEngine.fastSearchChunk(msg.prep, plan, msg.baseParams, {
+      start: msg.start,
+      step: msg.step,
+      minTrades: msg.minTrades,
+      limit: msg.limit,
+      onProgress: (n) => self.postMessage({ type: "fastProgress", id: msg.id, done: n }),
+    });
+    self.postMessage({ type: "fastResult", id: msg.id, top, done });
   } else if (msg.type === "search") {
     runSearch(msg.baseParams, msg.dims || {}, msg.minTrades || 15);
   }
@@ -28,7 +40,7 @@ self.onmessage = (event) => {
 
 function runSearch(baseParams, dims, minTrades) {
   const keys = Object.keys(dims);
-  const grids = keys.map((k) => buildCandidates(dims[k]));
+  const grids = keys.map((k) => self.LabEngine.buildCandidates(dims[k]));
   const total = grids.reduce((acc, g) => acc * g.length, 1) || 1;
 
   if (keys.length === 0) {
@@ -69,17 +81,7 @@ function runSearch(baseParams, dims, minTrades) {
     let processed = 0;
     while (processed < BATCH) {
       const params = currentParams();
-      if (
-        (params.oddsLo != null &&
-          params.oddsHi != null &&
-          Number(params.oddsLo) > Number(params.oddsHi)) ||
-        (params.elapsedFromMin != null &&
-          params.elapsedToMin != null &&
-          Number(params.elapsedFromMin) > Number(params.elapsedToMin)) ||
-        (params.minDistance != null &&
-          params.maxDistance != null &&
-          Number(params.minDistance) > Number(params.maxDistance))
-      ) {
+      if (self.LabEngine.comboInvalid(params)) {
         done++;
         processed++;
         if (!advance()) {

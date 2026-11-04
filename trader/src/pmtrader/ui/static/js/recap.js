@@ -84,9 +84,7 @@ export function renderRecapHtml(recap) {
         ? (t.errorShort || "rejected")
         : closed
           ? fmtUsd(pnlVal)
-          : t.unmatched
-            ? "No fill"
-            : "In Progress";
+          : "In Progress";
       const pnlCls = t.rejected ? "down" : pnlVal != null ? (pnlVal >= 0 ? "up" : "down") : "";
       const fill = fmtOdds(t.fillPrice);
       const leftSec = !t.rejected && !closed ? remainingSeconds(t.windowEnd) : null;

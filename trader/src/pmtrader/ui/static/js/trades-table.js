@@ -23,7 +23,7 @@ let visibleCount = 30;
 
 function matchesFilter(t) {
   if (filter === "all") return true;
-  if (filter === "unfilled") return t.unmatched || t.rejected;
+  if (filter === "unfilled") return t.rejected;
   if (!countsInStats(t)) return false;
   if (filter === "open") return !isStatClosed(t);
   return isStatClosed(t) && effectiveWon(t) === (filter === "won");
@@ -89,7 +89,7 @@ export function renderTradesTable(trades, root = document) {
         td.innerHTML = `<span class="badge-side ${sideLower}">${sideLower.toUpperCase()}</span>`;
       } else if (col.customOutcome) {
         const badge = outcomeBadge(t);
-        const title = t.unmatched ? "No fill — hypothetical result" : t.error || "";
+        const title = t.error || "";
         td.innerHTML = `<span class="badge-outcome ${badge.cls}"${title ? ` title="${attrEsc(title)}"` : ""}>${badge.label}</span>`;
       } else if (col.customPnl) {
         if (t.rejected) {
@@ -97,7 +97,7 @@ export function renderTradesTable(trades, root = document) {
           td.title = t.error || t.errorShort || "Order rejected";
           td.classList.add("down");
         } else if (!t.resolved) {
-          td.innerHTML = `<span class="badge-outcome open">${t.unmatched ? "NO FILL" : "OPEN"}</span>`;
+          td.innerHTML = `<span class="badge-outcome open">OPEN</span>`;
         } else {
           const pnl = tradePnl(t);
           td.textContent = pnlAtStake(t);

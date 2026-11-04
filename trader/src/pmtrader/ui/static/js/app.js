@@ -1,6 +1,6 @@
 import { initCompactUI, renderCompactOverview, esc } from "./compact-ui.js?v=26";
 import { buildTrades, tradePnl, effectiveWon, isStatClosed, countsInStats } from "./parse.js?v=19";
-import { computeSummary, computeWouldResults, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js?v=25";
+import { computeSummary, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js?v=25";
 import { loadFromServer, loadBalanceFromServer, listLogSources } from "./load.js?v=2";
 import { renderTradesTable, bindTradesTableSort } from "./trades-table.js?v=23";
 import { computeRecap, renderRecapHtml, startRecapCountdown } from "./recap.js?v=19";
@@ -127,42 +127,6 @@ function flashResolvedRows(root, fresh) {
   }
 }
 
-function paintWould(list) {
-  const root = document.getElementById("would-grid");
-  if (!root) return;
-  const w = computeWouldResults(list);
-  const n = w.wouldWin + w.wouldLose;
-  const summary = document.getElementById("would-summary");
-  if (summary) { summary.textContent = n ? fmtUsd(w.expected) : "—"; summary.className = `mono ${w.expected >= 0 ? "up" : "down"}`; }
-  if (!n) {
-    root.innerHTML = `<p class="would-empty">No unfilled orders yet. These totals are hypothetical results for FAKs that did not match.</p>`;
-    return;
-  }
-  const winAvg = w.avgWin == null ? "" : `<span class="would-avg">avg ${fmtUsd(w.avgWin)}</span>`;
-  const loseAvg = w.avgLose == null ? "" : `<span class="would-avg">avg ${fmtUsd(w.avgLose)}</span>`;
-  const per = w.perTrade == null ? "—" : `${fmtUsd(w.perTrade)} per trade`;
-  root.innerHTML = `
-    <article class="would-tile is-win">
-      <span class="would-label">Would win</span>
-      <strong class="would-count mono">${w.wouldWin}</strong>
-      <span class="would-pnl mono up">${fmtUsd(w.winPnl)}</span>
-      ${winAvg}
-    </article>
-    <article class="would-tile is-lose">
-      <span class="would-label">Would lose</span>
-      <strong class="would-count mono">${w.wouldLose}</strong>
-      <span class="would-pnl mono down">${fmtUsd(w.losePnl)}</span>
-      ${loseAvg}
-    </article>
-    <article class="would-tile is-expected">
-      <span class="would-label">Expected P&amp;L</span>
-      <strong class="would-count mono ${w.expected >= 0 ? "up" : "down"}">${fmtUsd(w.expected)}</strong>
-      <span class="would-avg">${w.wouldWin} win · ${w.wouldLose} lose</span>
-      <span class="would-avg">${per}</span>
-    </article>
-  `;
-}
-
 function paintDayPnl(s, { hero = true, nav = true } = {}) {
   const n = s?.todayNet ?? 0;
   const record =
@@ -260,7 +224,6 @@ function paintOverviewStats(list, { animatePnl = false, previewing = false } = {
     if (els.statStreak) els.statStreak.textContent = "—";
     if (els.statStreakSub) els.statStreakSub.textContent = previewing ? "Archive" : "Session";
     displayed.net = null;
-    paintWould([]);
     paintEquity([]);
     renderCalendar([]);
     return;
@@ -309,7 +272,6 @@ function paintOverviewStats(list, { animatePnl = false, previewing = false } = {
     els.statStreakSub.textContent = `Max: ${s.maxWinStreak}W / ${s.maxLossStreak}L`;
   }
 
-  paintWould(list);
   paintEquity(list);
   renderCalendar(list);
 }

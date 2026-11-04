@@ -25,12 +25,12 @@ export function compactTradeHtml(t) {
   const result = t.cashedOut ? 'CASHED OUT' : badge.label;
   const side = String(t.side || '').toLowerCase();
   const label = slugLabel(t.slug).split(' · ')[0];
-  const value = t.rejected ? 'Rejected' : closed && pnl != null ? fmtUsd(pnl) : t.unmatched ? 'No fill' : 'Open';
+  const value = t.rejected ? 'Rejected' : closed && pnl != null ? fmtUsd(pnl) : 'Open';
   const tone = closed && pnl != null ? pnl >= 0 ? 'up' : 'down' : '';
   return `<button type="button" class="compact-trade" data-trade-detail="${esc(keyFor(t))}">
     <span class="trade-direction ${side === 'down' ? 'down' : 'up'}" aria-label="${esc(side)}">${side === 'down' ? '↘' : '↗'}</span>
     <span class="trade-description"><strong>${esc(label)}</strong><small>${esc(fmtTs(t.entryTs))} · ${esc(fmtOdds(t.fillPrice))}</small></span>
-    <span class="trade-result"><strong class="mono ${tone}">${esc(value)}</strong><small>${t.unmatched && closed ? 'NO FILL · ' : ''}${esc(result)}</small></span>
+    <span class="trade-result"><strong class="mono ${tone}">${esc(value)}</strong><small>${esc(result)}</small></span>
   </button>`;
 }
 
@@ -112,7 +112,7 @@ export function initCompactUI() {
       ['Fees recorded', t.feeUsd == null ? '—' : `$${Number(t.feeUsd).toFixed(4)}`], ['Order ID', t.oid || '—'],
     ];
     showSheet('Trade details', `<div class="sheet-pnl mono ${pnl != null && pnl < 0 ? 'down' : 'up'}">${pnl == null ? '—' : fmtUsd(pnl)}</div>
-      <p class="sheet-subtitle">${t.unmatched ? 'Hypothetical result · this order did not fill' : 'Net P&L after fees'}</p>
+      <p class="sheet-subtitle">Net P&L after fees</p>
       ${t.error ? `<p class="profile-error">${esc(t.error)}</p>` : ''}
       <dl class="detail-kv">${details.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
       <a class="sheet-link" href="${esc(slugUrl(t.slug))}" target="_blank" rel="noopener noreferrer">Open market ↗</a>`, 'trade');

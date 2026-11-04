@@ -24,7 +24,6 @@ from pmtrader.tradelog import analyzer_records
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-_close_lock = threading.Lock()
 _SLUG_START_RE = re.compile(r"-(\d{10,})$")
 _LOG_NAME_RE = re.compile(r"^trades[\w.-]*\.jsonl$")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -107,12 +106,6 @@ def _notify_window(row: dict[str, Any]) -> tuple[int | None, int | None]:
     if end is not None and start is None:
         start = end - _WINDOW_S
     return start, end
-
-
-class ClosePositionsBody(BaseModel):
-    confirm: bool = False
-    scan_only: bool = False
-    dry_run: bool = False
 
 
 class DayBody(BaseModel):
@@ -249,8 +242,6 @@ def create_app(
             event = str(row.get("event") or "")
             if event not in ("entry", "resolve"):
                 continue
-            if event == "entry" and row.get("unmatched"):
-                continue
             order_id = str(row.get("order_id") or "")
             slug = str(row.get("slug") or "")
             matched_entry = entries.get(order_id) or entries.get(slug)
@@ -276,7 +267,6 @@ def create_app(
                     "stake_usd": stake_usd,
                     "net_pnl_usd": row.get("net_pnl_usd"),
                     "dry_run": dry_run,
-                    "unmatched": bool(row.get("unmatched")),
                     "error": row.get("error"),
                     "error_short": row.get("error_short"),
                 }
@@ -359,39 +349,6 @@ def create_app(
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse(payload)
-
-    @app.post("/api/close-positions")
-    def api_close_positions(body: ClosePositionsBody) -> JSONResponse:
-        if not body.scan_only and not body.confirm and not body.dry_run:
-            return JSONResponse(
-                {"error": "confirm=true is required to redeem/sell"},
-                status_code=400,
-            )
-        if not _close_lock.acquire(blocking=False):
-            return JSONResponse({"error": "a close-positions run is already in progress"}, status_code=409)
-        try:
-            from pmtrader.close import run_close_cycle
-            from pmtrader.orders import OrderClient
-
-            order_box = app.state.orders
-            if order_box is None and app.state.order_client is not None:
-                order_box = OrderClient(
-                    dry_run=body.dry_run,
-                    tick_size="0.01",
-                    log_path=app.state.log_path,
-                )
-                order_box._client = app.state.order_client
-            report = run_close_cycle(
-                orders=order_box,
-                dry_run=body.dry_run,
-                scan_only=body.scan_only,
-            )
-            return JSONResponse(report.as_dict())
-        except Exception as exc:
-            logger.exception("close-positions failed")
-            return JSONResponse({"error": str(exc)}, status_code=500)
-        finally:
-            _close_lock.release()
 
     app.mount("/js", StaticFiles(directory=STATIC_DIR / "js"), name="js")
     return app

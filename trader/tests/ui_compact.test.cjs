@@ -13,7 +13,7 @@ const start = Math.floor(+midnight / 1000) + 3600;
 const records = [];
 for (let i = 0; i < 45; i++) {
   const ts = start + i * 900;
-  const entry = { event: i === 43 ? 'reject' : 'entry', order_id: `test-${i}`, slug: `btc-updown-5m-${ts}`, side: i % 3 ? 'UP' : 'DOWN', entry_ts: ts + 12, window_end_ts: ts + 300, fill_price: .52, fill_shares: 50, stake_usd: 26, unmatched: i === 42, ok: i !== 43 };
+  const entry = { event: i === 43 ? 'reject' : 'entry', order_id: `test-${i}`, slug: `btc-updown-5m-${ts}`, side: i % 3 ? 'UP' : 'DOWN', entry_ts: ts + 12, window_end_ts: ts + 300, fill_price: .52, fill_shares: 50, stake_usd: 26, ok: i !== 43 };
   records.push(entry);
   if (i < 43) records.push({ event: 'resolve', order_id: entry.order_id, won: i % 4 !== 1, window_end_ts: ts + 300 });
 }
@@ -56,7 +56,7 @@ async function run() {
       assert.match(await page.locator('#hero-net').innerText(), /\$\d/);
       for (const tab of ['stats', 'live', 'days', 'trades', 'wallet', 'settings']) {
         await page.locator(`.tab-btn[data-tab="${tab}"]`).click();
-        if (tab === 'wallet') await page.waitForSelector('[data-close-run]');
+        if (tab === 'wallet') await page.waitForSelector('.profile-metrics-row');
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
         assert.equal(overflow, false, `${tab} has no horizontal page overflow at ${width}px`);
       }
@@ -81,14 +81,6 @@ async function run() {
         assert.deepEqual(odds, { valid: [0, 100, 28.000000000000004], absent: [null, null, null, null], zero: '0%', missing: true });
 
         await page.locator('.tab-btn[data-tab="stats"]').click();
-        await page.locator('#would-section summary').click();
-        assert.equal(await page.locator('.would-tile').count(), 3);
-        assert.match(await page.locator('#would-grid').innerText(), /Expected P&L/i);
-        const actual = await page.locator('#hero-net').innerText();
-        const expected = await page.locator('#would-summary').innerText();
-        assert.notEqual(actual, expected, 'Unfilled hypothetical outcome does not enter realized profit');
-        assert.match(await page.locator('#would-section').innerText(), /Unfilled orders only/);
-        await page.locator('#would-section summary').click();
         await page.locator('#equity-expand-btn').click();
         assert.equal(await page.locator('#equity-card').evaluate(e => e.classList.contains('is-expanded')), true);
         await page.locator('#equity-expand-btn').click();
@@ -152,31 +144,13 @@ async function run() {
         assert.equal(await page.locator('#mobile-trades-list .compact-trade').count(), 30);
         await page.locator('#trades-load-more').click();
         assert.equal(await page.locator('#mobile-trades-list .compact-trade').count(), 45);
-        for (const [filter, count] of [['won', 31], ['lost', 11], ['open', 1], ['unfilled', 2]]) {
+        for (const [filter, count] of [['won', 32], ['lost', 11], ['open', 1], ['unfilled', 1]]) {
           await page.locator(`[data-trade-filter="${filter}"]`).click();
           assert.equal(await page.locator('#mobile-trades-list .compact-trade').count(), Math.min(count, 30));
           assert.match(await page.locator('#trades-count').innerText(), new RegExp(`^${count} of`));
         }
-        await page.locator('#mobile-trades-list .compact-trade').last().click();
-        assert.match(await page.locator('#sheet-content').innerText(), /Hypothetical result/);
-        await page.locator('[data-sheet-close]').click();
 
         await page.locator('.tab-btn[data-tab="wallet"]').click();
-        const posts = [];
-        await page.route('**/api/close-positions', route => {
-          const body = route.request().postDataJSON(); posts.push(body);
-          return route.fulfill({ json: { scan_only: body.scan_only, jobs: [], redeemed: 0, sold: 0, skipped: 0 } });
-        });
-        page.once('dialog', dialog => dialog.dismiss());
-        await page.locator('[data-close-run]').click();
-        assert.equal(posts.length, 0, 'Cancel never sends a close request');
-        await page.locator('[data-close-scan]').click();
-        await page.waitForFunction(() => document.querySelector('[data-close-status]').textContent.startsWith('Scan:'));
-        assert.deepEqual(posts[0], { scan_only: true, confirm: false, dry_run: false });
-        page.once('dialog', dialog => dialog.accept());
-        await page.locator('[data-close-run]').click();
-        await page.waitForFunction(() => document.querySelector('[data-close-status]').textContent.startsWith('Closed:'));
-        assert.deepEqual(posts[1], { scan_only: false, confirm: true, dry_run: false });
         await page.locator('summary').filter({ hasText: 'Active Positions' }).click();
         assert.match(await page.locator('#profile-body').innerText(), /BTC 5m/);
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Expanded wallet tables scroll within their section');

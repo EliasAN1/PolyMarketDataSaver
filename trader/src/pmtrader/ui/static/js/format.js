@@ -60,9 +60,7 @@ export function fmtFill(t) {
 
 export function outcomeLabel(t) {
   if (t.rejected) return "failed";
-  if (t.unmatched && !t.resolved) return "no fill";
   if (!t.resolved) return "open";
-  if (t.unmatched) return t.won === true ? "would have won" : "would have lost";
   if (t.won === true) return "won";
   if (t.won === false) return "lost";
   return "—";
@@ -72,13 +70,7 @@ export function outcomeBadge(t) {
   const closed = isStatClosed(t);
   const won = effectiveWon(t);
   if (t.rejected) return { label: "FAILED", cls: "failed", pill: "fail" };
-  if (t.unmatched && !closed) return { label: "NO FILL", cls: "open", pill: "open" };
   if (!closed) return { label: "OPEN", cls: "open", pill: "open" };
-  if (t.unmatched) {
-    return won
-      ? { label: "WOULD WIN", cls: "would-win", pill: "would-win" }
-      : { label: "WOULD LOSE", cls: "would-lose", pill: "would-lose" };
-  }
   return won
     ? { label: "WON", cls: "won", pill: "win" }
     : { label: "LOST", cls: "lost", pill: "loss" };

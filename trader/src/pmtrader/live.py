@@ -10,7 +10,7 @@ from pmtrader.clock import current_window
 from pmtrader.config import TraderConfig
 from pmtrader.dayctrl import empty_day_payload
 from pmtrader.snapshot import LiveSnapshot
-from pmtrader.strategy import Decision, _ask_fillable, _atr_block_reason
+from pmtrader.strategy import Decision, _ask_fillable
 from pmtrader.when import WEEKDAY_NAMES, session_catalog
 
 # Skip reasons raised after the odds-band test passed on the last sample.
@@ -21,10 +21,6 @@ _PAST_BAND_REASONS = frozenset({
     "venues",
     "no_ask",
     "ask_above_cap",
-    "too_early",
-    "early_cross",
-    "atr_high",
-    "atr_missing",
 })
 
 _VENUE_NAMES = {
@@ -122,8 +118,6 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "use_venues": cfg.use_venues,
             "min_venues": cfg.min_venues,
             "stake_usd": cfg.stake_usd,
-            "min_delay_seconds": cfg.min_delay_seconds,
-            "atr_mean_max": cfg.atr_mean_max,
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,
             **cfg.when_payload(),
@@ -290,26 +284,6 @@ def _checks(
             "enabled": True,
         },
         {
-            "id": "delay",
-            "name": "Open Delay",
-            "target": f"> {_clock(cfg.min_delay_seconds)}",
-            "ok": (
-                elapsed is not None
-                and elapsed > cfg.min_delay_seconds
-                and not snap.early_cross
-            ),
-            "value": (
-                "Crossed before the delay"
-                if snap.early_cross
-                else (
-                    f"{_clock(elapsed)} / {_clock(cfg.min_delay_seconds)}"
-                    if elapsed is not None
-                    else "No window"
-                )
-            ),
-            "enabled": cfg.min_delay_seconds > 0,
-        },
-        {
             "id": "ptb",
             "name": "Price To Beat",
             "target": "PTB Baseline",
@@ -358,14 +332,6 @@ def _checks(
             "enabled": cfg.use_venues,
         },
         {
-            "id": "atr",
-            "name": "ATR vs Mean",
-            "target": f"<= {cfg.atr_mean_max:g}x",
-            "ok": _atr_block_reason(snap, cfg) is None,
-            "value": _atr_value(snap),
-            "enabled": True,
-        },
-        {
             "id": "once",
             "name": "Window Order Lock",
             "target": "1 per 5m",
@@ -374,14 +340,6 @@ def _checks(
             "enabled": True,
         },
     ]
-
-
-def _atr_value(snap: LiveSnapshot) -> str:
-    if snap.atr_block:
-        return snap.atr_block.replace("_", " ")
-    if snap.atr_ratio is None:
-        return "waiting"
-    return f"{snap.atr_ratio:.3f}x"
 
 
 def _once_value(traded: bool, order: dict[str, Any] | None) -> str:

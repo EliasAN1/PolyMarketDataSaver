@@ -64,55 +64,6 @@ def entry_record(
     return row
 
 
-def unmatched_entry_record(
-    *,
-    snap: Any,
-    side: str,
-    limit: float,
-    stake_usd: float,
-    result: Any,
-    now_s: float,
-    error: str | None,
-    error_short: str,
-) -> dict[str, Any]:
-    """Log a no-match FAK as a paper fill so settlement can score would-have P/L."""
-    fill_price = float(getattr(result, "limit", None) or limit or 0)
-    stake = float(getattr(result, "stake_usd", None) or stake_usd or 0)
-    fill_shares = round(stake / fill_price, 4) if fill_price else 0.0
-    row = {
-        "event": "entry",
-        "unmatched": True,
-        "order_id": f"{snap.slug}:miss:{int(now_s)}",
-        "slug": snap.slug,
-        "side": side,
-        "ts": int(now_s),
-        "window_end_ts": int(snap.window_end),
-        "stake_usd": round(stake, 4) if stake else stake_usd,
-        "fill_price": fill_price,
-        "fill_shares": fill_shares,
-        "fee_usd": round(taker_fee(fill_shares, fill_price), 5),
-        "error": error,
-        "error_short": error_short or "no match",
-    }
-    if getattr(result, "dry_run", False):
-        row["dry_run"] = True
-    btc_delta = snap.btc_minus_ptb(now_s)
-    row["btc_minus_ptb"] = round(btc_delta, 2) if btc_delta is not None else None
-    row["btc_source"] = snap.btc_source
-    row["spot_deltas"] = snap.spot_deltas(now_s)
-    return row
-
-
-def is_no_match_row(row: dict[str, Any]) -> bool:
-    if row.get("unmatched"):
-        return True
-    short = str(row.get("error_short") or "").lower()
-    if short == "no match":
-        return True
-    blob = f"{row.get('error') or ''} {short}".lower()
-    return "no match" in blob or "no orders found" in blob
-
-
 def reject_record(
     *,
     snap: Any,
@@ -185,9 +136,6 @@ def resolve_record(entry: dict[str, Any], *, outcome: str, now_s: float) -> dict
         "total_fees_usd": round(fee, 5),
         "net_pnl_usd": round(gross - fee, 4),
     }
-    if entry.get("unmatched") or is_no_match_row(entry):
-        row["unmatched"] = True
-        row["error_short"] = entry.get("error_short") or "no match"
     return row
 
 
@@ -211,6 +159,10 @@ def analyzer_records(path: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for row in read_records(path):
         ev = row.get("event")
+        if ev == "entry" and row.get("unmatched"):
+            continue
+        if ev == "resolve" and row.get("unmatched"):
+            continue
         if ev in {"entry", "resolve", "reject"}:
             out.append(row)
             continue
@@ -224,31 +176,13 @@ def unresolved_entries(path: Path) -> list[dict[str, Any]]:
     resolved = {r.get("order_id") for r in records if r.get("event") == "resolve"}
     out: list[dict[str, Any]] = []
     for row in records:
-        oid = row.get("order_id")
-        if not oid or oid in resolved:
+        if row.get("event") != "entry":
             continue
-        ev = row.get("event")
-        if ev == "entry" and (row.get("unmatched") or not row.get("error")):
-            out.append(_as_settleable(row))
-        elif ev == "reject" and is_no_match_row(row):
-            out.append(_as_settleable(row))
-    return out
-
-
-def _as_settleable(row: dict[str, Any]) -> dict[str, Any]:
-    if not (row.get("unmatched") or row.get("event") == "reject"):
-        return row
-    out = dict(row)
-    out["unmatched"] = True
-    limit = float(out.get("fill_price") or out.get("limit") or 0)
-    stake = float(out.get("stake_usd") or 0)
-    shares = float(out.get("fill_shares") or 0)
-    if limit and (not shares):
-        shares = round(stake / limit, 4) if stake else 0.0
-        out["fill_price"] = limit
-        out["fill_shares"] = shares
-    if not out.get("fee_usd") and shares and limit:
-        out["fee_usd"] = round(taker_fee(shares, limit), 5)
+        if row.get("error"):
+            continue
+        oid = row.get("order_id")
+        if oid and oid not in resolved:
+            out.append(row)
     return out
 
 

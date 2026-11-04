@@ -33,3 +33,7 @@ Thumbs.db
 trader/.env
 trader/logs/
 trader/.venv/
+
+# Local research & analysis
+analysis/
+

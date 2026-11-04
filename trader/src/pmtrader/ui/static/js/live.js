@@ -54,10 +54,6 @@ const SKIP_STATUS = {
   no_twap: { label: "TWAP", icon: "pulse", hint: "No TWAP yet" },
   twap_disagree: { label: "TWAP", icon: "pulse", hint: "TWAP disagrees with Binance" },
   venues: { label: "Venues", icon: "grid", hint: "Not enough venues" },
-  too_early: { label: "Delay", icon: "clock", hint: "Signal in the open delay closes this window" },
-  early_cross: { label: "Delay", icon: "clock", hint: "This window already crossed before the delay" },
-  atr_high: { label: "ATR", icon: "pulse", hint: "ATR above the mean cap" },
-  atr_missing: { label: "ATR", icon: "pulse", hint: "No ATR reading yet" },
   stopped_for_day: { label: "Stopped", icon: "pause", hint: "Stopped for today" },
   skipped_hour: { label: "Skipped", icon: "clock", hint: "This hour is skipped today" },
   invert_ask: { label: "Invert", icon: "shield", hint: "Opposite ask is above the cap" },
@@ -352,16 +348,6 @@ export function renderLive(data, root = document) {
       const v = venueLabel(data.config?.btc_source);
       skip.label = v;
       skip.hint = reason === "no_btc" ? `No ${v} feed` : `${v} distance out of range`;
-    }
-    if (reason === "too_early" || reason === "early_cross") {
-      const delay = Math.round(Number(data.config?.min_delay_seconds ?? 10));
-      skip.hint = reason === "early_cross"
-        ? `Crossed before ${delay}s, so this window stays closed`
-        : `Signal in the first ${delay}s closes this window`;
-    }
-    if (reason === "atr_high") {
-      const cap = data.config?.atr_mean_max;
-      skip.hint = cap != null ? `ATR above ${Number(cap)}x mean` : "ATR above the mean cap";
     }
     if (reason === "invert_ask") {
       const cap = data.config?.fak_limit;

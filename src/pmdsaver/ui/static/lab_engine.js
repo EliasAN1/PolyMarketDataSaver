@@ -532,6 +532,420 @@
     });
   }
 
+  /* ------------------------------------------------------------------ *
+   * Grid search ("Find best settings")
+   *
+   * fastScoreOther reproduces evaluate()'s netPnl / trades / wins exactly,
+   * bit for bit: the same entry rule as findEntry, the same per-trade PnL
+   * expression, and the same left-to-right summation over windows. It is
+   * faster because:
+   *  - each window is reduced once to the seconds that could ever be an
+   *    entry under the fixed toggles ("events");
+   *  - one pass over a window's events answers every elapsed from/to pair
+   *    (the elapsed band only picks which qualifying second comes first);
+   *  - the When filter, Date objects and per-trade bookkeeping run once,
+   *    not once per combination.
+   * ------------------------------------------------------------------ */
+
+  const ELAPSED_KEYS = ["elapsedFromMin", "elapsedToMin"];
+
+  function buildCandidates(dim) {
+    const values = [];
+    const steps = Math.max(1, Math.round((dim.max - dim.min) / dim.step));
+    for (let i = 0; i <= steps; i++) {
+      values.push(Math.round((dim.min + i * dim.step) * 1000) / 1000);
+    }
+    return values;
+  }
+
+  function elapsedInvalid(p) {
+    return p.elapsedFromMin != null && Number(p.elapsedFromMin) > Number(p.elapsedToMin);
+  }
+
+  function otherInvalid(p) {
+    return (p.oddsLo != null && Number(p.oddsLo) > Number(p.oddsHi))
+      || (p.minDistance != null && Number(p.minDistance) > Number(p.maxDistance));
+  }
+
+  function comboInvalid(p) {
+    return elapsedInvalid(p) || otherInvalid(p);
+  }
+
+  /** Enumerate the grid as (elapsed pair) x (other filters). Deterministic. */
+  function searchPlan(baseParams, dims) {
+    const keys = Object.keys(dims || {});
+    const grids = keys.map((k) => buildCandidates(dims[k]));
+    const total = grids.reduce((acc, g) => acc * g.length, 1);
+    const strides = new Array(keys.length);
+    let stride = 1;
+    for (let i = keys.length - 1; i >= 0; i--) {
+      strides[i] = stride;
+      stride *= grids[i].length;
+    }
+
+    const iFrom = keys.indexOf("elapsedFromMin");
+    const iTo = keys.indexOf("elapsedToMin");
+    const fromVals = iFrom >= 0 ? grids[iFrom] : [baseParams.elapsedFromMin];
+    const toVals = iTo >= 0 ? grids[iTo] : [baseParams.elapsedToMin];
+    const pairs = [];
+    for (let a = 0; a < fromVals.length; a++) {
+      for (let b = 0; b < toVals.length; b++) {
+        const probe = { elapsedFromMin: fromVals[a], elapsedToMin: toVals[b] };
+        if (elapsedInvalid(probe)) continue;
+        pairs.push({
+          values: iFrom >= 0 || iTo >= 0
+            ? Object.assign({}, iFrom >= 0 ? { elapsedFromMin: fromVals[a] } : null, iTo >= 0 ? { elapsedToMin: toVals[b] } : null)
+            : {},
+          from: fromVals[a],
+          to: toVals[b],
+          idx: (iFrom >= 0 ? a * strides[iFrom] : 0) + (iTo >= 0 ? b * strides[iTo] : 0),
+        });
+      }
+    }
+
+    const otherPos = [];
+    for (let i = 0; i < keys.length; i++) {
+      if (!ELAPSED_KEYS.includes(keys[i])) otherPos.push(i);
+    }
+    const counts = otherPos.map((i) => grids[i].length);
+    const nOther = counts.reduce((acc, c) => acc * c, 1);
+    const others = [];
+    for (let o = 0; o < nOther; o++) {
+      let rem = o;
+      let idx = 0;
+      const values = {};
+      for (let j = otherPos.length - 1; j >= 0; j--) {
+        const c = counts[j];
+        const ii = rem % c;
+        rem = (rem - ii) / c;
+        values[keys[otherPos[j]]] = grids[otherPos[j]][ii];
+        idx += ii * strides[otherPos[j]];
+      }
+      if (otherInvalid(Object.assign({}, baseParams, values))) continue;
+      others.push({ values, idx });
+    }
+
+    const useLast = !!baseParams.useLastMinutes;
+    const fIdxOf = pairs.map((p) => (useLast ? Math.max(0, Math.round(Number(p.from ?? 0) * 60)) : 0));
+    const tRaw = pairs.map((p) => (useLast ? Math.round(Number(p.to) * 60) : Infinity));
+    const F = Array.from(new Set(fIdxOf)).sort((x, y) => x - y);
+    const pairK = fIdxOf.map((f) => F.indexOf(f));
+    const byK = F.map(() => []);
+    pairK.forEach((k, pi) => byK[k].push(pi));
+    byK.forEach((list) => list.sort((x, y) => tRaw[x] - tRaw[y]));
+
+    return {
+      keys,
+      grids,
+      total,
+      pairs,
+      others,
+      valid: pairs.length * others.length,
+      fIdx: fIdxOf,
+      tRaw,
+      F,
+      maxF: F.length ? F[F.length - 1] : 0,
+      byK,
+    };
+  }
+
+  function fastSearchSupported(params, plan) {
+    if (!params.useSpot) return false;
+    if (params.fillMode !== "ask" && params.fillMode !== "mid") return false;
+    if (params.useLastMinutes && plan.pairs.some((p) => p.from == null || p.to == null)) return false;
+    return true;
+  }
+
+  function comboParams(baseParams, plan, oi, pi) {
+    return Object.assign({}, baseParams, plan.pairs[pi].values, plan.others[oi].values);
+  }
+
+  /** Reduce the tape to candidate entry seconds, in window order. */
+  function prepareSearch(windows, params, plan) {
+    const btcCol = btcSourceColumn(params.btcSource);
+    const useOdds = !!params.useOdds;
+    const useTwap = !!params.useTwap;
+    const useVolume = !!params.useVolume;
+    const useVenues = !!params.useVenues;
+    const fillMid = params.fillMode === "mid";
+
+    // Loosest threshold over the whole grid: a second failing it fails every combo.
+    let minDistFloor = Infinity;
+    let maxDistCeil = -Infinity;
+    let noDistCap = false;
+    let minVolFloor = Infinity;
+    let minVenFloor = Infinity;
+    for (const o of plan.others) {
+      const p = Object.assign({}, params, o.values);
+      minDistFloor = Math.min(minDistFloor, Number(p.minDistance));
+      if (p.maxDistance == null) noDistCap = true;
+      else maxDistCeil = Math.max(maxDistCeil, Number(p.maxDistance));
+      minVolFloor = Math.min(minVolFloor, Number(p.minVolume));
+      minVenFloor = Math.min(minVenFloor, Number(p.minVenues));
+    }
+    if (!Number.isFinite(minDistFloor)) minDistFloor = -Infinity;
+    if (noDistCap || !Number.isFinite(maxDistCeil)) maxDistCeil = Infinity;
+    if (!Number.isFinite(minVolFloor)) minVolFloor = -Infinity;
+    if (!Number.isFinite(minVenFloor)) minVenFloor = -Infinity;
+
+    const offsets = [0];
+    const durations = [];
+    const evT = [];
+    const evKey = [];
+    const evPrev = [];
+    const evCurr = [];
+    const evAbs = [];
+    const evVol = [];
+    const evVen = [];
+    const evPnl = [];
+    const evWon = [];
+
+    for (let i = 0; i < windows.length; i++) {
+      const win = windows[i];
+      const when = new Date(Number(win.start) * 1000);
+      if (!Number.isFinite(when.getTime()) || !passesWhen(when, params)) continue;
+      const rows = win.rows;
+      if (!rows || !rows.length) continue;
+      const duration = win.end - win.start;
+      const before = evT.length;
+      let lastUp = -1;
+      let lastDown = -1;
+      let lastUpV = null;
+      let lastDownV = null;
+      // All stored rows: findEntry's from/to swap can reach past `duration`.
+      for (let t = 0; t < rows.length; t++) {
+        const row = rows[t];
+        if (!row) continue;
+        const upAsk = row[ROW.UP_ASK];
+        const downAsk = row[ROW.DOWN_ASK];
+        const upMid = row[ROW.UP_MID];
+        const downMid = row[ROW.DOWN_MID];
+        const up = upMid != null ? upMid : upAsk;
+        const down = downMid != null ? downMid : downAsk;
+        const btc = cell(row, btcCol);
+        emit: if (btc != null) {
+          const isUp = btc > 0;
+          const absDist = Math.abs(btc);
+          if (absDist < minDistFloor || absDist > maxDistCeil) break emit;
+          const curr = isUp ? up : down;
+          const pIdx = isUp ? lastUp : lastDown;
+          const prev = isUp ? lastUpV : lastDownV;
+          if (useOdds && (curr == null || pIdx < 0 || prev === curr)) break emit;
+          if (useTwap) {
+            const twap = row[ROW.TWAP_MINUS_PTB];
+            if (twap == null || (isUp ? !(twap > 0) : !(twap < 0))) break emit;
+          }
+          const volume = row[ROW.VOLUME];
+          if (useVolume && (volume == null || volume < minVolFloor)) break emit;
+          const venues = isUp ? row[ROW.VENUES_UP] : row[ROW.VENUES_DOWN];
+          if (useVenues && (venues == null || venues < minVenFloor)) break emit;
+          const fill = fillMid ? (isUp ? upMid : downMid) : (isUp ? upAsk : downAsk);
+          if (fill == null || fill <= 0 || fill >= 1) break emit;
+          const shares = params.stake / fill;
+          const fee = takerFee(shares, fill, params.feeRate);
+          const won = (isUp ? "up" : "down") === win.outcome;
+          const payout = won ? shares : 0;
+          evT.push(t);
+          evKey.push(useOdds ? pIdx : t);
+          evPrev.push(useOdds ? prev : 0);
+          evCurr.push(useOdds ? curr : 0);
+          evAbs.push(absDist);
+          evVol.push(useVolume ? volume : 0);
+          evVen.push(useVenues ? venues : 0);
+          evPnl.push(payout - params.stake - fee);
+          evWon.push(won ? 1 : 0);
+        }
+        if (up != null) {
+          lastUp = t;
+          lastUpV = up;
+        }
+        if (down != null) {
+          lastDown = t;
+          lastDownV = down;
+        }
+      }
+      if (evT.length > before) {
+        durations.push(duration);
+        offsets.push(evT.length);
+      }
+    }
+
+    return {
+      useOdds,
+      useVolume,
+      useVenues,
+      offsets: Int32Array.from(offsets),
+      durations: Int32Array.from(durations),
+      evT: Int32Array.from(evT),
+      evKey: Int32Array.from(evKey),
+      evPrev: Float64Array.from(evPrev),
+      evCurr: Float64Array.from(evCurr),
+      evAbs: Float64Array.from(evAbs),
+      evVol: Float64Array.from(evVol),
+      evVen: Float64Array.from(evVen),
+      evPnl: Float64Array.from(evPnl),
+      evWon: Uint8Array.from(evWon),
+    };
+  }
+
+  function prepTransferables(prep) {
+    return [
+      prep.offsets.buffer, prep.durations.buffer, prep.evT.buffer, prep.evKey.buffer,
+      prep.evPrev.buffer, prep.evCurr.buffer, prep.evAbs.buffer, prep.evVol.buffer,
+      prep.evVen.buffer, prep.evPnl.buffer, prep.evWon.buffer,
+    ];
+  }
+
+  function newScoreBuffers(plan) {
+    const P = plan.pairs.length;
+    const K = plan.F.length;
+    return {
+      pnl: new Float64Array(P),
+      trades: new Int32Array(P),
+      wins: new Int32Array(P),
+      firstT: new Int32Array(K),
+      firstPnl: new Float64Array(K),
+      firstWon: new Uint8Array(K),
+    };
+  }
+
+  /** netPnl / trades / wins for other-combo `oi` under every elapsed pair. */
+  function fastScoreOther(prep, plan, baseParams, oi, buf) {
+    const params = Object.assign({}, baseParams, plan.others[oi].values);
+    const [lo, hi] = clampBand(
+      params.oddsLo != null ? params.oddsLo : params.hitOdds != null ? params.hitOdds : 0.2,
+      params.oddsHi != null ? params.oddsHi : params.hitOdds != null ? params.hitOdds : 0.3,
+    );
+    const minD = params.minDistance;
+    const maxD = params.maxDistance;
+    const minVol = params.minVolume;
+    const minVen = params.minVenues;
+    const { useOdds, useVolume, useVenues, offsets, durations, evT, evKey, evPrev, evCurr, evAbs, evVol, evVen, evPnl, evWon } = prep;
+    const { F, maxF, byK, tRaw, fIdx } = plan;
+    const K = F.length;
+    const P = plan.pairs.length;
+    const { pnl, trades, wins, firstT, firstPnl, firstWon } = buf;
+    pnl.fill(0);
+    trades.fill(0);
+    wins.fill(0);
+    const nWin = durations.length;
+
+    for (let w = 0; w < nWin; w++) {
+      const a = offsets[w];
+      const b = offsets[w + 1];
+      const dur = durations[w];
+      if (dur >= maxF) {
+        let m = 0;
+        for (let e = a; e < b; e++) {
+          const key = evKey[e];
+          if (key < F[m]) continue;
+          const d = evAbs[e];
+          if (d < minD || (maxD != null && d > maxD)) continue;
+          if (useOdds && !enteredBand(evPrev[e], evCurr[e], lo, hi)) continue;
+          if (useVolume && evVol[e] < minVol) continue;
+          if (useVenues && evVen[e] < minVen) continue;
+          do {
+            firstT[m] = evT[e];
+            firstPnl[m] = evPnl[e];
+            firstWon[m] = evWon[e];
+            m++;
+          } while (m < K && F[m] <= key);
+          if (m === K) break;
+        }
+        for (let k = 0; k < m; k++) {
+          const ft = firstT[k];
+          const list = byK[k];
+          for (let j = list.length - 1; j >= 0; j--) {
+            const pi = list[j];
+            if (Math.min(dur, tRaw[pi]) < ft) break;
+            pnl[pi] += firstPnl[k];
+            trades[pi]++;
+            if (firstWon[k]) wins[pi]++;
+          }
+        }
+      } else {
+        for (let pi = 0; pi < P; pi++) {
+          let f = fIdx[pi];
+          let to = Math.min(dur, tRaw[pi]);
+          if (f > to) {
+            const tmp = f;
+            f = to;
+            to = tmp;
+          }
+          for (let e = a; e < b; e++) {
+            if (evKey[e] < f) continue;
+            const d = evAbs[e];
+            if (d < minD || (maxD != null && d > maxD)) continue;
+            if (useOdds && !enteredBand(evPrev[e], evCurr[e], lo, hi)) continue;
+            if (useVolume && evVol[e] < minVol) continue;
+            if (useVenues && evVen[e] < minVen) continue;
+            if (evT[e] <= to) {
+              pnl[pi] += evPnl[e];
+              trades[pi]++;
+              if (evWon[e]) wins[pi]++;
+            }
+            break;
+          }
+        }
+      }
+    }
+    return buf;
+  }
+
+  function betterThan(a, b) {
+    return a.netPnl > b.netPnl || (a.netPnl === b.netPnl && a.idx < b.idx);
+  }
+
+  function pushTop(top, item, limit) {
+    if (top.length >= limit && !betterThan(item, top[top.length - 1])) return;
+    let i = top.length;
+    while (i > 0 && betterThan(item, top[i - 1])) i--;
+    top.splice(i, 0, item);
+    if (top.length > limit) top.pop();
+  }
+
+  /** Score other-combos start, start+step, ... and keep the best `limit`. */
+  function fastSearchChunk(prep, plan, baseParams, opts) {
+    const { start = 0, step = 1, minTrades = 0, limit = 10, onProgress } = opts || {};
+    const buf = newScoreBuffers(plan);
+    const top = [];
+    const P = plan.pairs.length;
+    let done = 0;
+    let lastReport = 0;
+    for (let oi = start; oi < plan.others.length; oi += step) {
+      fastScoreOther(prep, plan, baseParams, oi, buf);
+      const baseIdx = plan.others[oi].idx;
+      for (let pi = 0; pi < P; pi++) {
+        if (buf.trades[pi] < minTrades) continue;
+        pushTop(top, {
+          netPnl: buf.pnl[pi],
+          trades: buf.trades[pi],
+          wins: buf.wins[pi],
+          idx: baseIdx + plan.pairs[pi].idx,
+          oi,
+          pi,
+        }, limit);
+      }
+      done += P;
+      if (onProgress) {
+        const now = Date.now();
+        if (now - lastReport > 200) {
+          lastReport = now;
+          onProgress(done);
+        }
+      }
+    }
+    return { top, done };
+  }
+
+  function mergeTop(lists, limit) {
+    const top = [];
+    for (const list of lists) {
+      for (const item of list) pushTop(top, item, limit);
+    }
+    return top;
+  }
+
   const LabEngine = {
     ROW,
     DEFAULT_BTC_SOURCE,
@@ -542,6 +956,17 @@
     btcSourceColumn,
     evaluate,
     sweep,
+    buildCandidates,
+    comboInvalid,
+    searchPlan,
+    fastSearchSupported,
+    comboParams,
+    prepareSearch,
+    prepTransferables,
+    newScoreBuffers,
+    fastScoreOther,
+    fastSearchChunk,
+    mergeTop,
     findEntry,
     takerFee,
     enteredBand,

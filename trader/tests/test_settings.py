@@ -28,9 +28,6 @@ def _ready_snap(window_start: int) -> LiveSnapshot:
         prev_up_mid=0.40,
         prev_down_mid=0.40,
         in_watch=True,
-        atr_value=10.0,
-        atr_mean=10.0,
-        atr_ratio=1.0,
     )
 
 
@@ -44,8 +41,6 @@ def _cfg() -> TraderConfig:
         use_btc_distance=False,
         use_twap=False,
         use_venues=False,
-        min_delay_seconds=10,
-        atr_mean_max=1.125,
     )
 
 

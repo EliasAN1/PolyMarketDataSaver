@@ -23,20 +23,15 @@ use_twap = true
 use_venues = true
 min_venues = 4
 
-stake_usd = 2
+stake_usd = 50
 min_seconds_left = 3
 tick_size = "0.01"
-
-# Seconds after the window open. A signal before this is held and rechecked.
-min_delay_seconds = 10
-# Wilder ATR(14) / mean of the last 288 closed 5m ATRs. Skip above this.
-atr_mean_max = 1.125
 
 # When to trade. Empty = all. Hours are the machine clock (Europe/Berlin, UTC+2).
 # Weekdays are Sun=0 or Mon,Tue,... Markets: tokyo_open, london, wall, ...
 hours = []
 weekdays = []
-sessions = []
+sessions = ["wall", "tokyo_open", "london"]
 
 # Local hours that buy the opposite of the signal. Empty = never.
 invert_hours = []

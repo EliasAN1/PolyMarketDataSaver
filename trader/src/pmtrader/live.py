@@ -120,6 +120,8 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "use_venues": cfg.use_venues,
             "min_venues": cfg.min_venues,
             "use_fresh_turn": cfg.use_fresh_turn,
+            "normalize_basis": cfg.normalize_basis,
+            "venue_basis": dict(snap.venue_basis),
             "stake_usd": cfg.stake_usd,
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,

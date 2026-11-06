@@ -103,7 +103,92 @@
     return last - first;
   }
 
-  function findEntry(win, params, prevDelta) {
+  function windowSpreadMedian(win, col) {
+    const rows = win && win.rows;
+    if (!rows || !rows.length) return null;
+    const diffs = [];
+    for (let t = 0; t < rows.length; t++) {
+      const row = rows[t];
+      if (!row) continue;
+      const v = cell(row, col);
+      const tw = row[ROW.TWAP_MINUS_PTB];
+      if (v != null && tw != null) diffs.push(v - tw);
+    }
+    return diffs.length >= 10 ? median(diffs) : null;
+  }
+
+  function buildBasisMap(windows) {
+    const winBin = new Map();
+    const winBy = new Map();
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i];
+      const b = windowSpreadMedian(w, ROW.BINANCE_MINUS_PTB);
+      const y = windowSpreadMedian(w, ROW.BYBIT_MINUS_PTB);
+      if (b != null) winBin.set(w.start, b);
+      if (y != null) winBy.set(w.start, y);
+    }
+    const out = new Map();
+    for (let i = 0; i < windows.length; i++) {
+      const s = windows[i].start;
+      const bs = [];
+      const ys = [];
+      for (let k = 1; k <= 12; k++) {
+        const pb = winBin.get(s - 300 * k);
+        const py = winBy.get(s - 300 * k);
+        if (pb != null) bs.push(pb);
+        if (py != null) ys.push(py);
+      }
+      out.set(s, {
+        bin: bs.length ? median(bs) : 0,
+        by: ys.length ? median(ys) : 0,
+      });
+    }
+    return out;
+  }
+
+  function normalizedBtc(row, btcCol, basis) {
+    if (!basis) return cell(row, btcCol);
+    if (btcCol === ROW.BINANCE_MINUS_PTB) {
+      const v = cell(row, ROW.BINANCE_MINUS_PTB);
+      return v == null ? null : v - basis.bin;
+    }
+    if (btcCol === ROW.BYBIT_MINUS_PTB) {
+      const v = cell(row, ROW.BYBIT_MINUS_PTB);
+      return v == null ? null : v - basis.by;
+    }
+    if (btcCol === ROW.BTC_MINUS_PTB) {
+      const b = cell(row, ROW.BINANCE_MINUS_PTB);
+      const c = cell(row, ROW.COINBASE_MINUS_PTB);
+      const y = cell(row, ROW.BYBIT_MINUS_PTB);
+      const vals = [];
+      if (b != null) vals.push(b - basis.bin);
+      if (c != null) vals.push(c);
+      if (y != null) vals.push(y - basis.by);
+      return vals.length ? median(vals) : null;
+    }
+    return cell(row, btcCol);
+  }
+
+  function normalizedVenuesCount(row, side, basis) {
+    if (!basis) {
+      return side === "up" ? row[ROW.VENUES_UP] : row[ROW.VENUES_DOWN];
+    }
+    const b = cell(row, ROW.BINANCE_MINUS_PTB);
+    const c = cell(row, ROW.COINBASE_MINUS_PTB);
+    const y = cell(row, ROW.BYBIT_MINUS_PTB);
+    const bn = b == null ? null : b - basis.bin;
+    const yn = y == null ? null : y - basis.by;
+    const isUp = side === "up";
+    let count = 0;
+    if (bn != null && (isUp ? bn > 0 : bn < 0)) count++;
+    if (c != null && (isUp ? c > 0 : c < 0)) count++;
+    if (yn != null && (isUp ? yn > 0 : yn < 0)) count++;
+    // When all 3 normalized spot venues agree, count normalized futures as the 4th venue.
+    if (count === 3) count = 4;
+    return count;
+  }
+
+  function findEntry(win, params, prevDelta, basis) {
     const duration = win.end - win.start;
     const rows = win.rows;
     if (!rows || !rows.length) return null;
@@ -143,11 +228,9 @@
       const downAsk = row[ROW.DOWN_ASK];
       const upMid = row[ROW.UP_MID];
       const downMid = row[ROW.DOWN_MID];
-      const btcMinusPtb = cell(row, btcCol);
+      const btcMinusPtb = normalizedBtc(row, btcCol, basis);
       const twapMinusPtb = row[ROW.TWAP_MINUS_PTB];
       const volume = row[ROW.VOLUME];
-      const venuesUp = row[ROW.VENUES_UP];
-      const venuesDown = row[ROW.VENUES_DOWN];
       const up = upMid != null ? upMid : upAsk;
       const down = downMid != null ? downMid : downAsk;
 
@@ -199,7 +282,7 @@
         }
       }
       if (params.useVenues) {
-        const venues = side === "up" ? venuesUp : venuesDown;
+        const venues = normalizedVenuesCount(row, side, basis);
         if (venues == null || venues < params.minVenues) {
           remember(up, down);
           continue;
@@ -398,6 +481,7 @@
 
     const btcCol = btcSourceColumn(params.btcSource);
     const byStart = params.useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
+    const basisMap = params.normalizeBasis ? buildBasisMap(windows) : null;
 
     for (let i = 0; i < windows.length; i++) {
       const win = windows[i];
@@ -410,7 +494,8 @@
       }
       const prevWin = byStart ? byStart.get(win.start - 300) : null;
       const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
-      const entry = findEntry(win, params, prevDelta);
+      const basis = basisMap ? basisMap.get(win.start) : null;
+      const entry = findEntry(win, params, prevDelta, basis);
       if (!entry) {
         if (pass) noTrade++;
         continue;
@@ -697,8 +782,10 @@
     const useVolume = !!params.useVolume;
     const useVenues = !!params.useVenues;
     const useFreshTurn = !!params.useFreshTurn;
+    const normalizeBasis = !!params.normalizeBasis;
     const fillMid = params.fillMode === "mid";
     const byStart = useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
+    const basisMap = normalizeBasis ? buildBasisMap(windows) : null;
 
     // Loosest threshold over the whole grid: a second failing it fails every combo.
     let minDistFloor = Infinity;
@@ -740,6 +827,7 @@
       const prevWin = byStart ? byStart.get(win.start - 300) : null;
       const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
       if (useFreshTurn && prevDelta == null) continue;
+      const basis = basisMap ? basisMap.get(win.start) : null;
       const duration = win.end - win.start;
       const before = evT.length;
       let lastUp = -1;
@@ -756,7 +844,7 @@
         const downMid = row[ROW.DOWN_MID];
         const up = upMid != null ? upMid : upAsk;
         const down = downMid != null ? downMid : downAsk;
-        const btc = cell(row, btcCol);
+        const btc = normalizedBtc(row, btcCol, basis);
         emit: if (btc != null) {
           const isUp = btc > 0;
           const absDist = Math.abs(btc);
@@ -771,7 +859,7 @@
           }
           const volume = row[ROW.VOLUME];
           if (useVolume && (volume == null || volume < minVolFloor)) break emit;
-          const venues = isUp ? row[ROW.VENUES_UP] : row[ROW.VENUES_DOWN];
+          const venues = normalizedVenuesCount(row, isUp ? "up" : "down", basis);
           if (useVenues && (venues == null || venues < minVenFloor)) break emit;
           if (useFreshTurn && (isUp ? prevDelta > 0 : prevDelta < 0)) break emit;
           const fill = fillMid ? (isUp ? upMid : downMid) : (isUp ? upAsk : downAsk);

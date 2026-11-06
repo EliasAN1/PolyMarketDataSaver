@@ -8,10 +8,12 @@ from dataclasses import dataclass, field
 
 VENUE_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot", "binance_futures")
 SPOT_SOURCES = ("binance_spot", "coinbase_spot", "bybit_spot")
+USDT_SOURCES = ("binance_spot", "bybit_spot", "binance_futures")
 # A silent socket keeps its last print forever. Strategy Lab's tape only
 # forward-fills ticks the collector actually received, so a dead Binance
 # feed on the trader must not be mixed with a live CLOB book.
 PRICE_STALE_AFTER_S = 5.0
+BASIS_HISTORY_WINDOWS = 12
 
 
 def _f(value: object | None) -> float | None:
@@ -78,6 +80,17 @@ class LiveSnapshot:
     prev_5m_delta: float | None = None
     _first_btc: float | None = None
     _last_btc: float | None = None
+    # Trailing 60m (12-window) median of (venue_price - twap) for USDT venues.
+    normalize_basis: bool = False
+    venue_basis: dict[str, float] = field(
+        default_factory=lambda: {name: 0.0 for name in VENUE_SOURCES}
+    )
+    _win_spreads: dict[str, list[float]] = field(
+        default_factory=lambda: {name: [] for name in USDT_SOURCES}
+    )
+    _basis_history: dict[str, list[float]] = field(
+        default_factory=lambda: {name: [] for name in USDT_SOURCES}
+    )
 
     def reset_window(
         self,
@@ -99,6 +112,16 @@ class LiveSnapshot:
             self.prev_5m_delta = round(self._last_btc - self._first_btc, 2)
         elif window_start != self.window_start:
             self.prev_5m_delta = None
+        if self.window_start > 0 and window_start != self.window_start:
+            for name in USDT_SOURCES:
+                samples = self._win_spreads.get(name) or []
+                if len(samples) >= 10:
+                    hist = self._basis_history.setdefault(name, [])
+                    hist.append(float(statistics.median(samples)))
+                    if len(hist) > BASIS_HISTORY_WINDOWS:
+                        del hist[:-BASIS_HISTORY_WINDOWS]
+                    self.venue_basis[name] = round(float(statistics.median(hist)), 2)
+                self._win_spreads[name] = []
         self.slug = slug
         self.window_start = window_start
         self.window_end = window_end
@@ -150,8 +173,32 @@ class LiveSnapshot:
         value = _f(tick.get("value"))
         if value is None:
             return
+        now = _tick_s(tick)
         self.twap = value
-        self.twap_ts = _tick_s(tick)
+        self.twap_ts = now
+        for name in USDT_SOURCES:
+            px = _fresh(self.spots.get(name), self.spot_ts.get(name), now)
+            if px is not None:
+                self._win_spreads.setdefault(name, []).append(px - value)
+
+    def seed_venue_basis(self, basis_by_venue: dict[str, float]) -> None:
+        """Seed initial USDT-to-USD venue basis on startup when history is empty."""
+        for name in USDT_SOURCES:
+            val = basis_by_venue.get(name)
+            if val is not None and not self._basis_history.get(name):
+                self._basis_history[name] = [float(val)]
+                self.venue_basis[name] = round(float(val), 2)
+
+    def _basis_offset(self, name: str) -> float:
+        if not self.normalize_basis or name == "coinbase_spot":
+            return 0.0
+        return float(self.venue_basis.get(name) or 0.0)
+
+    def _effective_spot(self, name: str, now_s: float) -> float | None:
+        price = self._fresh_spot(name, now_s)
+        if price is None:
+            return None
+        return price - self._basis_offset(name)
 
     @property
     def btc(self) -> float | None:
@@ -160,8 +207,8 @@ class LiveSnapshot:
     def btc_at(self, now_s: float | None = None) -> float | None:
         now = _now_s(now_s)
         if self.btc_source != "median":
-            return self._fresh_spot(self.btc_source, now)
-        values = [p for name in SPOT_SOURCES if (p := self._fresh_spot(name, now)) is not None]
+            return self._effective_spot(self.btc_source, now)
+        values = [p for name in SPOT_SOURCES if (p := self._effective_spot(name, now)) is not None]
         if not values:
             return None
         return statistics.median(values)
@@ -175,7 +222,7 @@ class LiveSnapshot:
         now = _now_s(now_s)
         out: dict[str, float] = {}
         for name in VENUE_SOURCES:
-            price = self._fresh_spot(name, now)
+            price = self._effective_spot(name, now)
             if price is not None:
                 out[name] = round(price - self.ptb, 2)
         return out
@@ -198,7 +245,7 @@ class LiveSnapshot:
         now = _now_s(now_s)
         count = 0
         for name in VENUE_SOURCES:
-            price = self._fresh_spot(name, now)
+            price = self._effective_spot(name, now)
             if price is None:
                 continue
             if side == "up" and price > self.ptb:

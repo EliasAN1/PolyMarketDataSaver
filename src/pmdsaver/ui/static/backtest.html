@@ -158,6 +158,14 @@
           </div>
           <div class="lab-filter-hint">Only buys when the chosen side reverses the previous 5m window’s BTC move (<code>side × prev_5m_delta &lt;= 0</code>). Skips exhausted multi-window continuations.</div>
         </div>
+
+        <div class="lab-filter" id="filterNormalizeBasis">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="normalizeBasis" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">Normalize USDT basis (60m vs TWAP)</span>
+          </div>
+          <div class="lab-filter-hint">Subtracts the trailing 60-minute (12-window) median <code>venue − TWAP</code> spread from Binance and Bybit so USDT venues are evaluated in USD alongside Coinbase and Chainlink TWAP (restoring DOWN signals when USDT trades at a premium).</div>
+        </div>
       </div>
 
       <div class="lab-group">

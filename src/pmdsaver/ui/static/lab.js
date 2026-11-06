@@ -137,6 +137,7 @@ const FILTER_PAIRS = [
   { toggle: "useVolume", range: "minVolumeRange", numInput: "minVolumeNum", filter: "filterVolume" },
   { toggle: "useVenues", range: "minVenuesRange", numInput: "minVenuesNum", filter: "filterVenues" },
   { toggle: "useFreshTurn", range: null, numInput: null, filter: "filterFreshTurn" },
+  { toggle: "normalizeBasis", range: null, numInput: null, filter: "filterNormalizeBasis" },
 ];
 
 function syncRangeAndNumber(rangeId, numId) {
@@ -257,6 +258,7 @@ function getParams() {
     useVenues: $("useVenues").checked,
     minVenues: Math.max(1, Math.round(num("minVenuesNum", 2))),
     useFreshTurn: $("useFreshTurn") ? $("useFreshTurn").checked : false,
+    normalizeBasis: $("normalizeBasis") ? $("normalizeBasis").checked : false,
     hours: whenState.hours,
     weekdays: whenState.weekdays,
     sessions: whenState.sessions,
@@ -286,7 +288,7 @@ function setParams(params) {
   }
   if (params.fillMode) $("fillMode").value = params.fillMode;
   if (params.btcSource) $("btcSource").value = params.btcSource;
-  const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues", "useFreshTurn"];
+  const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues", "useFreshTurn", "normalizeBasis"];
   for (const t of toggles) {
     if (params[t] != null && $(t)) $(t).checked = params[t];
   }

@@ -19,6 +19,9 @@ BINANCE_SPOT_URL = "wss://stream.binance.com:9443/ws/btcusdt@aggTrade"
 BINANCE_FUTURES_URL = "wss://fstream.binance.com/ws/btcusdt@aggTrade"
 BINANCE_FUTURES_REST = "https://fapi.binance.com/fapi/v1/ticker/price"
 BINANCE_KLINES = "https://api.binance.com/api/v3/klines"
+BINANCE_FUTURES_KLINES = "https://fapi.binance.com/fapi/v1/klines"
+BYBIT_KLINES = "https://api.bybit.com/v5/market/kline"
+COINBASE_CANDLES = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
 # BTC trade streams tick many times per second; 30s of silence means a dead socket.
 IDLE_TIMEOUT_S = 30.0
 
@@ -71,6 +74,70 @@ async def fetch_prev_5m_delta(window_start_s: int) -> float | None:
         if attempt < 2:
             await asyncio.sleep(0.4)
     return None
+
+
+async def fetch_initial_venue_basis(window_start_s: int) -> dict[str, float]:
+    """60m (12-candle) median USDT-to-USD basis for Binance Spot, Bybit Spot, and Binance Futures."""
+    import statistics
+
+    start_s = int(window_start_s) - 3600
+    end_s = int(window_start_s)
+    start_ms = start_s * 1000
+    end_ms = end_s * 1000 - 1
+    out: dict[str, float] = {}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            cb_res, bin_res, by_res, fut_res = await asyncio.gather(
+                client.get(
+                    COINBASE_CANDLES,
+                    params={"granularity": 300, "start": start_s, "end": end_s},
+                ),
+                client.get(
+                    BINANCE_KLINES,
+                    params={"symbol": "BTCUSDT", "interval": "5m", "startTime": start_ms, "endTime": end_ms, "limit": 12},
+                ),
+                client.get(
+                    BYBIT_KLINES,
+                    params={"category": "spot", "symbol": "BTCUSDT", "interval": "5", "start": start_ms, "end": end_ms, "limit": 12},
+                ),
+                client.get(
+                    BINANCE_FUTURES_KLINES,
+                    params={"symbol": "BTCUSDT", "interval": "5m", "startTime": start_ms, "endTime": end_ms, "limit": 12},
+                ),
+                return_exceptions=True,
+            )
+        if isinstance(cb_res, Exception):
+            return out
+        cb_rows = cb_res.json()
+        if not isinstance(cb_rows, list):
+            return out
+        cb_by_open = {int(r[0]): float(r[4]) for r in cb_rows if isinstance(r, list) and len(r) >= 5 and int(r[0]) < end_s}
+        if not cb_by_open:
+            return out
+
+        if not isinstance(bin_res, Exception):
+            bin_rows = bin_res.json()
+            if isinstance(bin_rows, list):
+                diffs = [float(r[4]) - cb_by_open[int(r[0]) // 1000] for r in bin_rows if (int(r[0]) // 1000) in cb_by_open]
+                if diffs:
+                    out["binance_spot"] = round(float(statistics.median(diffs)), 2)
+
+        if not isinstance(by_res, Exception):
+            by_rows = (by_res.json().get("result") or {}).get("list") or []
+            if isinstance(by_rows, list):
+                diffs = [float(r[4]) - cb_by_open[int(r[0]) // 1000] for r in by_rows if (int(r[0]) // 1000) in cb_by_open]
+                if diffs:
+                    out["bybit_spot"] = round(float(statistics.median(diffs)), 2)
+
+        if not isinstance(fut_res, Exception):
+            fut_rows = fut_res.json()
+            if isinstance(fut_rows, list):
+                diffs = [float(r[4]) - cb_by_open[int(r[0]) // 1000] for r in fut_rows if (int(r[0]) // 1000) in cb_by_open]
+                if diffs:
+                    out["binance_futures"] = round(float(statistics.median(diffs)), 2)
+    except Exception:
+        logger.exception("Initial venue basis bootstrap failed")
+    return out
 
 
 class BinanceSpotStream:

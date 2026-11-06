@@ -25,6 +25,9 @@ min_venues = 4
 # Fresh turn only (zero tuned parameters): only buy when the trade side is
 # opposite to the previous closed 5m BTC candle (side * prev_5m_delta <= 0).
 use_fresh_turn = true
+# Normalize USDT venues (Binance, Bybit, Futures) to USD by subtracting their
+# trailing 60m basis vs 60s TWAP (restores DOWN signals when USDT trades at a premium).
+normalize_basis = true
 
 stake_usd = 50
 min_seconds_left = 3

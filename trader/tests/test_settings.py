@@ -134,6 +134,31 @@ class FreshTurnTest(unittest.TestCase):
         )
         self.assertEqual(snap.prev_5m_delta, -34.5)
 
+    def test_normalize_basis_restores_down_signal_when_usdt_has_premium(self):
+        snap = LiveSnapshot(
+            slug="w1",
+            window_start=1_000_000,
+            window_end=1_000_300,
+            ptb=70000.0,
+            normalize_basis=True,
+        )
+        # Seed a +$90 USDT premium on Binance/Bybit and +$50 on Futures
+        snap.seed_venue_basis({
+            "binance_spot": 90.0,
+            "bybit_spot": 90.0,
+            "binance_futures": 50.0,
+        })
+        now = 1_000_030.0
+        # Real USD fell -$12 below PTB (69988), so raw Binance is still +$78 above PTB (70078)!
+        snap.apply_price({"source": "coinbase_spot", "price": "69988.0", "recv_ts_ms": int(now * 1000)})
+        snap.apply_price({"source": "binance_spot", "price": "70078.0", "recv_ts_ms": int(now * 1000)})
+        snap.apply_price({"source": "bybit_spot", "price": "70077.0", "recv_ts_ms": int(now * 1000)})
+        snap.apply_price({"source": "binance_futures", "price": "70038.0", "recv_ts_ms": int(now * 1000)})
+        snap.apply_twap({"value": "69992.0", "recv_ts_ms": int(now * 1000)})
+        # Normalized Binance delta is 70078 - 90 - 70000 = -12.0 (DOWN), and all 4 normalized venues are < PTB!
+        self.assertAlmostEqual(snap.btc_minus_ptb(now), -12.0)
+        self.assertEqual(snap.venues_on_side("down", now), 4)
+
 
 class SettingsApiTest(unittest.TestCase):
     def setUp(self):

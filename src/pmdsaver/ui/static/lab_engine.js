@@ -85,7 +85,25 @@
     return fee >= 1e-5 ? fee : 0;
   }
 
-  function findEntry(win, params) {
+  function windowBtcDelta(win, btcCol) {
+    const rows = win && win.rows;
+    if (!rows || !rows.length) return null;
+    let first = null;
+    let last = null;
+    for (let t = 0; t < rows.length; t++) {
+      const row = rows[t];
+      if (!row) continue;
+      const v = cell(row, btcCol);
+      if (v != null) {
+        if (first == null) first = v;
+        last = v;
+      }
+    }
+    if (first == null || last == null) return null;
+    return last - first;
+  }
+
+  function findEntry(win, params, prevDelta) {
     const duration = win.end - win.start;
     const rows = win.rows;
     if (!rows || !rows.length) return null;
@@ -183,6 +201,12 @@
       if (params.useVenues) {
         const venues = side === "up" ? venuesUp : venuesDown;
         if (venues == null || venues < params.minVenues) {
+          remember(up, down);
+          continue;
+        }
+      }
+      if (params.useFreshTurn) {
+        if (prevDelta == null || (side === "up" ? prevDelta > 0 : prevDelta < 0)) {
           remember(up, down);
           continue;
         }
@@ -372,6 +396,9 @@
       return key;
     }
 
+    const btcCol = btcSourceColumn(params.btcSource);
+    const byStart = params.useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
+
     for (let i = 0; i < windows.length; i++) {
       const win = windows[i];
       const when = new Date(Number(win.start) * 1000);
@@ -381,7 +408,9 @@
         considered++;
         touchDay(win.start);
       }
-      const entry = findEntry(win, params);
+      const prevWin = byStart ? byStart.get(win.start - 300) : null;
+      const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
+      const entry = findEntry(win, params, prevDelta);
       if (!entry) {
         if (pass) noTrade++;
         continue;
@@ -667,7 +696,9 @@
     const useTwap = !!params.useTwap;
     const useVolume = !!params.useVolume;
     const useVenues = !!params.useVenues;
+    const useFreshTurn = !!params.useFreshTurn;
     const fillMid = params.fillMode === "mid";
+    const byStart = useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
 
     // Loosest threshold over the whole grid: a second failing it fails every combo.
     let minDistFloor = Infinity;
@@ -706,6 +737,9 @@
       if (!Number.isFinite(when.getTime()) || !passesWhen(when, params)) continue;
       const rows = win.rows;
       if (!rows || !rows.length) continue;
+      const prevWin = byStart ? byStart.get(win.start - 300) : null;
+      const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
+      if (useFreshTurn && prevDelta == null) continue;
       const duration = win.end - win.start;
       const before = evT.length;
       let lastUp = -1;
@@ -739,6 +773,7 @@
           if (useVolume && (volume == null || volume < minVolFloor)) break emit;
           const venues = isUp ? row[ROW.VENUES_UP] : row[ROW.VENUES_DOWN];
           if (useVenues && (venues == null || venues < minVenFloor)) break emit;
+          if (useFreshTurn && (isUp ? prevDelta > 0 : prevDelta < 0)) break emit;
           const fill = fillMid ? (isUp ? upMid : downMid) : (isUp ? upAsk : downAsk);
           if (fill == null || fill <= 0 || fill >= 1) break emit;
           const shares = params.stake / fill;

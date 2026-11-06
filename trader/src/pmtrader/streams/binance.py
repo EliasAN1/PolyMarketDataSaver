@@ -47,6 +47,32 @@ async def fetch_spot_open_at(open_time_s: int) -> str | None:
     return None
 
 
+async def fetch_prev_5m_delta(window_start_s: int) -> float | None:
+    """Close minus open of the closed 5m BTCUSDT candle [window_start - 300, window_start]."""
+    prev_open_ms = (int(window_start_s) - 300) * 1000
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    BINANCE_KLINES,
+                    params={
+                        "symbol": "BTCUSDT",
+                        "interval": "5m",
+                        "startTime": prev_open_ms,
+                        "limit": 1,
+                    },
+                )
+                response.raise_for_status()
+                rows = response.json()
+                if isinstance(rows, list) and rows and int(rows[0][0]) == prev_open_ms:
+                    return round(float(rows[0][4]) - float(rows[0][1]), 2)
+        except Exception:
+            logger.exception("Binance 5m kline fetch failed for %s", window_start_s - 300)
+        if attempt < 2:
+            await asyncio.sleep(0.4)
+    return None
+
+
 class BinanceSpotStream:
     def __init__(self, on_price_tick: PriceTickCallback) -> None:
         self.on_price_tick = on_price_tick

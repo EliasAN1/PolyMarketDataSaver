@@ -56,6 +56,7 @@ class TraderConfig:
     use_twap: bool = False
     use_venues: bool = False
     min_venues: int = 2
+    use_fresh_turn: bool = False
     stake_usd: float = 10.0
     min_seconds_left: float = 3.0
     tick_size: str = "0.01"

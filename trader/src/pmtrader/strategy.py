@@ -100,6 +100,11 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float, day: Any | 
             return skip("twap_disagree", ask)
     if cfg.use_venues and snap.venues_on_side(side, now_s) < cfg.min_venues:
         return skip("venues", ask)
+    if cfg.use_fresh_turn:
+        if snap.prev_5m_delta is None:
+            return skip("no_prev_5m", ask)
+        if (side == "up" and snap.prev_5m_delta > 0) or (side == "down" and snap.prev_5m_delta < 0):
+            return skip("continuation", ask)
 
     if ask is None or not 0 < ask < 1:
         return skip("no_ask", ask)

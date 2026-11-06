@@ -30,7 +30,7 @@ from pmtrader.tradelog import (
     unresolved_entries,
 )
 from pmtrader.ui.server import serve_background
-from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream
+from pmtrader.streams.binance import BinanceFuturesStream, BinanceSpotStream, fetch_prev_5m_delta
 from pmtrader.streams.bybit import BybitSpotStream
 from pmtrader.streams.coinbase import CoinbaseSpotStream
 from pmtrader.streams.polymarket_clob import ClobOddsStream
@@ -78,6 +78,7 @@ class Trader:
         self.binance_futures = BinanceFuturesStream(on_price_tick=self._on_price)
         self.coinbase = CoinbaseSpotStream(on_price_tick=self._on_price)
         self.bybit = BybitSpotStream(on_price_tick=self._on_price)
+        self._prev_5m_cache: dict[int, float] = {}
 
     async def run(self) -> None:
         self.orders.connect()
@@ -98,6 +99,7 @@ class Trader:
         self.binance_futures.start()
         self.coinbase.start()
         self.bybit.start()
+        await self._arm_prev_5m(self.current.start)
         self._tasks = [
             asyncio.create_task(self._window_loop(), name="window-loop"),
             asyncio.create_task(self._sample_loop(), name="sample-loop"),
@@ -169,6 +171,7 @@ class Trader:
                 ptb=None,
                 ptb_source=None,
             )
+        await self._arm_prev_5m(now_window.start)
         if self.next_market is not None and self.next_market.window.slug == now_window.slug:
             market = self.next_market
             self.next_market = None
@@ -213,6 +216,7 @@ class Trader:
             ptb=_to_float(ptb),
             ptb_source=source,
         )
+        await self._arm_prev_5m(market.window.start)
         self.clob.set_tokens(market.up_token_id, market.down_token_id)
         await self.clob.bootstrap_from_rest()
         logger.info(
@@ -276,6 +280,16 @@ class Trader:
 
     async def _on_twap(self, tick: dict) -> None:
         self.snap.apply_twap(tick)
+
+    async def _arm_prev_5m(self, window_start: int) -> None:
+        """Load the closed 5m BTC candle delta [window_start - 300, window_start]."""
+        if window_start in self._prev_5m_cache:
+            self.snap.prev_5m_delta = self._prev_5m_cache[window_start]
+            return
+        delta = await fetch_prev_5m_delta(window_start)
+        if delta is not None:
+            self._prev_5m_cache[window_start] = delta
+            self.snap.prev_5m_delta = delta
 
     async def _sample_loop(self) -> None:
         """Evaluate once per second at the Lab's tape boundary, not on every tick."""

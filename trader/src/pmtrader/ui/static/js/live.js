@@ -54,6 +54,8 @@ const SKIP_STATUS = {
   no_twap: { label: "TWAP", icon: "pulse", hint: "No TWAP yet" },
   twap_disagree: { label: "TWAP", icon: "pulse", hint: "TWAP disagrees with Binance" },
   venues: { label: "Venues", icon: "grid", hint: "Not enough venues" },
+  no_prev_5m: { label: "Prev 5m", icon: "clock", hint: "Waiting for previous 5m candle" },
+  continuation: { label: "Cont.", icon: "trend", hint: "Same direction as previous 5m candle (exhaustion)" },
   stopped_for_day: { label: "Stopped", icon: "pause", hint: "Stopped for today" },
   skipped_hour: { label: "Skipped", icon: "clock", hint: "This hour is skipped today" },
   invert_ask: { label: "Invert", icon: "shield", hint: "Opposite ask is above the cap" },
@@ -500,7 +502,7 @@ export function renderLive(data, root = document) {
   // 7. Strategy Checklist Matrix
   const checksGrid = root.getElementById("radar-checks-grid");
   const summaryBadge = root.getElementById("checklist-summary-badge");
-  const checks = (data.checks || []).filter((c) => c.enabled || c.id !== "venues");
+  const checks = (data.checks || []).filter((c) => c.enabled || (c.id !== "venues" && c.id !== "fresh_turn"));
 
   let passingCount = 0;
   let enabledCount = 0;

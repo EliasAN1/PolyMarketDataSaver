@@ -19,6 +19,8 @@ _PAST_BAND_REASONS = frozenset({
     "no_twap",
     "twap_disagree",
     "venues",
+    "no_prev_5m",
+    "continuation",
     "no_ask",
     "ask_above_cap",
 })
@@ -117,6 +119,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "use_twap": cfg.use_twap,
             "use_venues": cfg.use_venues,
             "min_venues": cfg.min_venues,
+            "use_fresh_turn": cfg.use_fresh_turn,
             "stake_usd": cfg.stake_usd,
             "watch_from_s": from_s if armed else 0,
             "watch_to_s": to_s,
@@ -223,6 +226,15 @@ def _checks(
     )
     venues = snap.venues_on_side(side, now_s) if side else 0
     venues_ok = (not cfg.use_venues) or venues >= cfg.min_venues
+    prev_5m = snap.prev_5m_delta
+    fresh_turn_ok = (not cfg.use_fresh_turn) or (
+        prev_5m is not None
+        and (
+            side is None
+            or (side == "up" and prev_5m <= 0)
+            or (side == "down" and prev_5m >= 0)
+        )
+    )
     from_clock = _clock(from_s)
     to_clock = _clock(to_s)
 
@@ -330,6 +342,14 @@ def _checks(
             "ok": venues_ok,
             "value": f"{venues} agreed" if side else "Waiting",
             "enabled": cfg.use_venues,
+        },
+        {
+            "id": "fresh_turn",
+            "name": "Fresh Turn (Prev 5m)",
+            "target": "Opposite to prev 5m",
+            "ok": fresh_turn_ok,
+            "value": f"{_signed(prev_5m, 1)} prev 5m" if prev_5m is not None else "waiting",
+            "enabled": cfg.use_fresh_turn,
         },
         {
             "id": "once",

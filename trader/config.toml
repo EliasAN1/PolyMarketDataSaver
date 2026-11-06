@@ -22,6 +22,9 @@ max_btc_away = 200
 use_twap = true
 use_venues = true
 min_venues = 4
+# Fresh turn only (zero tuned parameters): only buy when the trade side is
+# opposite to the previous closed 5m BTC candle (side * prev_5m_delta <= 0).
+use_fresh_turn = true
 
 stake_usd = 50
 min_seconds_left = 3

@@ -74,6 +74,10 @@ class LiveSnapshot:
     prev_up_mid: float | None = None
     prev_down_mid: float | None = None
     in_watch: bool = False
+    # Close minus open of the previous 5m BTC candle (window_start - 300 .. window_start).
+    prev_5m_delta: float | None = None
+    _first_btc: float | None = None
+    _last_btc: float | None = None
 
     def reset_window(
         self,
@@ -86,6 +90,15 @@ class LiveSnapshot:
         ptb: float | None,
         ptb_source: str | None,
     ) -> None:
+        if (
+            self.window_start > 0
+            and window_start == self.window_start + 300
+            and self._first_btc is not None
+            and self._last_btc is not None
+        ):
+            self.prev_5m_delta = round(self._last_btc - self._first_btc, 2)
+        elif window_start != self.window_start:
+            self.prev_5m_delta = None
         self.slug = slug
         self.window_start = window_start
         self.window_end = window_end
@@ -99,6 +112,8 @@ class LiveSnapshot:
         self.down_mid = None
         self.twap = None
         self.twap_ts = None
+        self._first_btc = None
+        self._last_btc = None
         for name in VENUE_SOURCES:
             self.spots[name] = None
             self.spot_ts[name] = None
@@ -126,6 +141,10 @@ class LiveSnapshot:
             return
         self.spots[source] = price
         self.spot_ts[source] = _tick_s(tick)
+        if source == self.btc_source or (self.btc_source == "median" and source in SPOT_SOURCES):
+            if self._first_btc is None:
+                self._first_btc = price
+            self._last_btc = price
 
     def apply_twap(self, tick: dict) -> None:
         value = _f(tick.get("value"))

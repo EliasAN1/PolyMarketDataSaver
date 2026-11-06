@@ -91,6 +91,50 @@ class InvertHoursTest(unittest.TestCase):
         self.assertFalse(decision.inverted)
 
 
+class FreshTurnTest(unittest.TestCase):
+    def test_opposite_prev_5m_allows_entry(self):
+        snap = _ready_snap(1_000_000)
+        snap.prev_5m_delta = -24.5
+        cfg = _cfg()
+        cfg.use_fresh_turn = True
+        decision = evaluate(snap, cfg, now_s=1_000_030)
+        self.assertTrue(decision.ok)
+        self.assertEqual(decision.side, "up")
+
+    def test_same_direction_prev_5m_blocks_as_continuation(self):
+        snap = _ready_snap(1_000_000)
+        snap.prev_5m_delta = 18.2
+        cfg = _cfg()
+        cfg.use_fresh_turn = True
+        decision = evaluate(snap, cfg, now_s=1_000_030)
+        self.assertFalse(decision.ok)
+        self.assertEqual(decision.reason, "continuation")
+
+    def test_missing_prev_5m_blocks_when_enabled(self):
+        snap = _ready_snap(1_000_000)
+        snap.prev_5m_delta = None
+        cfg = _cfg()
+        cfg.use_fresh_turn = True
+        decision = evaluate(snap, cfg, now_s=1_000_030)
+        self.assertFalse(decision.ok)
+        self.assertEqual(decision.reason, "no_prev_5m")
+
+    def test_snapshot_carries_over_prev_5m_delta_on_consecutive_roll(self):
+        snap = LiveSnapshot(slug="w1", window_start=1_000_000, window_end=1_000_300)
+        snap.apply_price({"source": "binance_spot", "price": "70000.0", "recv_ts_ms": 1_000_001_000})
+        snap.apply_price({"source": "binance_spot", "price": "69965.5", "recv_ts_ms": 1_000_299_000})
+        snap.reset_window(
+            slug="w2",
+            window_start=1_000_300,
+            window_end=1_000_600,
+            up_token_id="u",
+            down_token_id="d",
+            ptb=69965.5,
+            ptb_source="rtds",
+        )
+        self.assertEqual(snap.prev_5m_delta, -34.5)
+
+
 class SettingsApiTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

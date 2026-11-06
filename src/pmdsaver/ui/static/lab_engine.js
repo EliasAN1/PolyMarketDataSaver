@@ -138,10 +138,12 @@
         if (pb != null) bs.push(pb);
         if (py != null) ys.push(py);
       }
-      out.set(s, {
-        bin: bs.length ? median(bs) : 0,
-        by: ys.length ? median(ys) : 0,
-      });
+      if (bs.length >= 3 && ys.length >= 3) {
+        out.set(s, {
+          bin: median(bs),
+          by: median(ys),
+        });
+      }
     }
     return out;
   }

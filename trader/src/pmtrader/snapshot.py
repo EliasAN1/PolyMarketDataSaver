@@ -179,7 +179,11 @@ class LiveSnapshot:
         for name in USDT_SOURCES:
             px = _fresh(self.spots.get(name), self.spot_ts.get(name), now)
             if px is not None:
-                self._win_spreads.setdefault(name, []).append(px - value)
+                spreads = self._win_spreads.setdefault(name, [])
+                spreads.append(px - value)
+                # If no completed window history exists yet, seed live basis once 30+ ticks arrive
+                if not self._basis_history.get(name) and len(spreads) >= 30:
+                    self.venue_basis[name] = round(float(statistics.median(spreads)), 2)
 
     def seed_venue_basis(self, basis_by_venue: dict[str, float]) -> None:
         """Seed initial USDT-to-USD venue basis on startup when history is empty."""

@@ -33,7 +33,6 @@ from pmtrader.ui.server import serve_background
 from pmtrader.streams.binance import (
     BinanceFuturesStream,
     BinanceSpotStream,
-    fetch_initial_venue_basis,
     fetch_prev_5m_delta,
 )
 from pmtrader.streams.bybit import BybitSpotStream
@@ -105,11 +104,6 @@ class Trader:
         self.binance_futures.start()
         self.coinbase.start()
         self.bybit.start()
-        if self.cfg.normalize_basis:
-            basis = await fetch_initial_venue_basis(self.current.start)
-            if basis:
-                self.snap.seed_venue_basis(basis)
-                logger.info("Seeded 60m USDT-USD venue basis: %s", basis)
         await self._arm_prev_5m(self.current.start)
         self._tasks = [
             asyncio.create_task(self._window_loop(), name="window-loop"),

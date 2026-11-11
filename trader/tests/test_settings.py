@@ -159,6 +159,25 @@ class FreshTurnTest(unittest.TestCase):
         self.assertAlmostEqual(snap.btc_minus_ptb(now), -12.0)
         self.assertEqual(snap.venues_on_side("down", now), 4)
 
+    def test_steamroller_guard_blocks_fighting_strong_60m_trend(self):
+        snap = _ready_snap(1_000_000)
+        snap.prev_5m_delta = -20.0
+        snap.prev_60m_delta = -350.0  # BTC dropped -$350 over last 60m; UP bet fights it
+        cfg = _cfg()
+        cfg.use_fresh_turn = True
+        cfg.max_counter_60m = 300.0
+        decision = evaluate(snap, cfg, now_s=1_000_030)
+        self.assertFalse(decision.ok)
+        self.assertEqual(decision.reason, "steamroller_60m")
+
+        # Within cap (-$250) or aligned (+$350) is allowed
+        snap2 = _ready_snap(1_000_000)
+        snap2.prev_5m_delta = -20.0
+        snap2.prev_60m_delta = -250.0
+        decision2 = evaluate(snap2, cfg, now_s=1_000_030)
+        self.assertTrue(decision2.ok)
+        self.assertEqual(decision2.side, "up")
+
 
 class SettingsApiTest(unittest.TestCase):
     def setUp(self):

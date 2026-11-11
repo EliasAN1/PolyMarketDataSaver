@@ -190,7 +190,31 @@
     return count;
   }
 
-  function findEntry(win, params, prevDelta, basis) {
+  function buildDelta60mMap(windows, btcCol) {
+    const winDeltas = new Map();
+    for (let i = 0; i < windows.length; i++) {
+      const w = windows[i];
+      const d = windowBtcDelta(w, btcCol);
+      if (d != null) winDeltas.set(w.start, d);
+    }
+    const out = new Map();
+    for (let i = 0; i < windows.length; i++) {
+      const s = windows[i].start;
+      let sum = 0;
+      let count = 0;
+      for (let k = 1; k <= 12; k++) {
+        const d = winDeltas.get(s - 300 * k);
+        if (d != null) {
+          sum += d;
+          count++;
+        }
+      }
+      if (count >= 6) out.set(s, sum);
+    }
+    return out;
+  }
+
+  function findEntry(win, params, prevDelta, basis, delta60m) {
     const duration = win.end - win.start;
     const rows = win.rows;
     if (!rows || !rows.length) return null;
@@ -292,6 +316,13 @@
       }
       if (params.useFreshTurn) {
         if (prevDelta == null || (side === "up" ? prevDelta > 0 : prevDelta < 0)) {
+          remember(up, down);
+          continue;
+        }
+      }
+      if (params.useSteamrollerGuard && params.maxCounter60m > 0 && delta60m != null) {
+        const cap = Number(params.maxCounter60m);
+        if (side === "up" ? delta60m < -cap : delta60m > cap) {
           remember(up, down);
           continue;
         }
@@ -484,6 +515,7 @@
     const btcCol = btcSourceColumn(params.btcSource);
     const byStart = params.useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
     const basisMap = params.normalizeBasis ? buildBasisMap(windows) : null;
+    const delta60mMap = params.useSteamrollerGuard && params.maxCounter60m > 0 ? buildDelta60mMap(windows, btcCol) : null;
 
     for (let i = 0; i < windows.length; i++) {
       const win = windows[i];
@@ -497,7 +529,8 @@
       const prevWin = byStart ? byStart.get(win.start - 300) : null;
       const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
       const basis = basisMap ? basisMap.get(win.start) : null;
-      const entry = findEntry(win, params, prevDelta, basis);
+      const delta60m = delta60mMap ? delta60mMap.get(win.start) : null;
+      const entry = findEntry(win, params, prevDelta, basis, delta60m);
       if (!entry) {
         if (pass) noTrade++;
         continue;
@@ -785,9 +818,12 @@
     const useVenues = !!params.useVenues;
     const useFreshTurn = !!params.useFreshTurn;
     const normalizeBasis = !!params.normalizeBasis;
+    const useSteamroller = !!(params.useSteamrollerGuard && params.maxCounter60m > 0);
+    const steamrollerCap = Number(params.maxCounter60m || 300);
     const fillMid = params.fillMode === "mid";
     const byStart = useFreshTurn ? new Map(windows.map((w) => [w.start, w])) : null;
     const basisMap = normalizeBasis ? buildBasisMap(windows) : null;
+    const delta60mMap = useSteamroller ? buildDelta60mMap(windows, btcCol) : null;
 
     // Loosest threshold over the whole grid: a second failing it fails every combo.
     let minDistFloor = Infinity;
@@ -830,6 +866,7 @@
       const prevDelta = prevWin ? windowBtcDelta(prevWin, btcCol) : null;
       if (useFreshTurn && prevDelta == null) continue;
       const basis = basisMap ? basisMap.get(win.start) : null;
+      const delta60m = delta60mMap ? delta60mMap.get(win.start) : null;
       const duration = win.end - win.start;
       const before = evT.length;
       let lastUp = -1;
@@ -864,6 +901,7 @@
           const venues = normalizedVenuesCount(row, isUp ? "up" : "down", basis);
           if (useVenues && (venues == null || venues < minVenFloor)) break emit;
           if (useFreshTurn && (isUp ? prevDelta > 0 : prevDelta < 0)) break emit;
+          if (useSteamroller && delta60m != null && (isUp ? delta60m < -steamrollerCap : delta60m > steamrollerCap)) break emit;
           const fill = fillMid ? (isUp ? upMid : downMid) : (isUp ? upAsk : downAsk);
           if (fill == null || fill <= 0 || fill >= 1) break emit;
           const shares = params.stake / fill;

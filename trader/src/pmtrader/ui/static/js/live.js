@@ -56,6 +56,7 @@ const SKIP_STATUS = {
   venues: { label: "Venues", icon: "grid", hint: "Not enough venues" },
   no_prev_5m: { label: "Prev 5m", icon: "clock", hint: "Waiting for previous 5m candle" },
   continuation: { label: "Cont.", icon: "trend", hint: "Same direction as previous 5m candle (exhaustion)" },
+  steamroller_60m: { label: "1h Trend", icon: "trend", hint: "Fighting a strong 1-hour counter-trend steamroller" },
   stopped_for_day: { label: "Stopped", icon: "pause", hint: "Stopped for today" },
   skipped_hour: { label: "Skipped", icon: "clock", hint: "This hour is skipped today" },
   invert_ask: { label: "Invert", icon: "shield", hint: "Opposite ask is above the cap" },

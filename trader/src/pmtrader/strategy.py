@@ -105,6 +105,11 @@ def evaluate(snap: LiveSnapshot, cfg: TraderConfig, *, now_s: float, day: Any | 
             return skip("no_prev_5m", ask)
         if (side == "up" and snap.prev_5m_delta > 0) or (side == "down" and snap.prev_5m_delta < 0):
             return skip("continuation", ask)
+    if cfg.max_counter_60m is not None and snap.prev_60m_delta is not None:
+        if (side == "up" and snap.prev_60m_delta < -cfg.max_counter_60m) or (
+            side == "down" and snap.prev_60m_delta > cfg.max_counter_60m
+        ):
+            return skip("steamroller_60m", ask)
 
     if ask is None or not 0 < ask < 1:
         return skip("no_ask", ask)

@@ -76,6 +76,31 @@ async def fetch_prev_5m_delta(window_start_s: int) -> float | None:
     return None
 
 
+async def fetch_prev_60m_delta(window_start_s: int) -> float | None:
+    """Sum of 5m (close - open) across the trailing 12 closed 5m BTCUSDT candles."""
+    start_ms = (int(window_start_s) - 3600) * 1000
+    end_ms = int(window_start_s) * 1000 - 1
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                BINANCE_KLINES,
+                params={
+                    "symbol": "BTCUSDT",
+                    "interval": "5m",
+                    "startTime": start_ms,
+                    "endTime": end_ms,
+                    "limit": 12,
+                },
+            )
+            response.raise_for_status()
+            rows = response.json()
+            if isinstance(rows, list) and len(rows) >= 6:
+                return round(sum(float(r[4]) - float(r[1]) for r in rows), 2)
+    except Exception:
+        logger.exception("Binance 60m kline fetch failed for %s", window_start_s)
+    return None
+
+
 async def fetch_initial_venue_basis(window_start_s: int) -> dict[str, float]:
     """60m (12-candle) median USDT-to-USD basis for Binance Spot, Bybit Spot, and Binance Futures."""
     import statistics

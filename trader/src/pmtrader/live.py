@@ -21,6 +21,7 @@ _PAST_BAND_REASONS = frozenset({
     "venues",
     "no_prev_5m",
     "continuation",
+    "steamroller_60m",
     "no_ask",
     "ask_above_cap",
 })
@@ -121,6 +122,7 @@ def live_payload(trader: Any | None) -> dict[str, Any]:
             "min_venues": cfg.min_venues,
             "use_fresh_turn": cfg.use_fresh_turn,
             "normalize_basis": cfg.normalize_basis,
+            "max_counter_60m": cfg.max_counter_60m,
             "venue_basis": dict(snap.venue_basis),
             "stake_usd": cfg.stake_usd,
             "watch_from_s": from_s if armed else 0,
@@ -237,6 +239,14 @@ def _checks(
             or (side == "down" and prev_5m >= 0)
         )
     )
+    prev_60m = snap.prev_60m_delta
+    steamroller_ok = (
+        cfg.max_counter_60m is None
+        or prev_60m is None
+        or side is None
+        or (side == "up" and prev_60m >= -cfg.max_counter_60m)
+        or (side == "down" and prev_60m <= cfg.max_counter_60m)
+    )
     from_clock = _clock(from_s)
     to_clock = _clock(to_s)
 
@@ -352,6 +362,14 @@ def _checks(
             "ok": fresh_turn_ok,
             "value": f"{_signed(prev_5m, 1)} prev 5m" if prev_5m is not None else "waiting",
             "enabled": cfg.use_fresh_turn,
+        },
+        {
+            "id": "steamroller_60m",
+            "name": "1h Steamroller Guard",
+            "target": f"<= ${cfg.max_counter_60m:g} against" if cfg.max_counter_60m is not None else "Off",
+            "ok": steamroller_ok,
+            "value": f"{_signed(prev_60m, 0)} 60m" if prev_60m is not None else "warming",
+            "enabled": cfg.max_counter_60m is not None,
         },
         {
             "id": "once",

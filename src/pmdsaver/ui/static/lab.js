@@ -138,6 +138,7 @@ const FILTER_PAIRS = [
   { toggle: "useVenues", range: "minVenuesRange", numInput: "minVenuesNum", filter: "filterVenues" },
   { toggle: "useFreshTurn", range: null, numInput: null, filter: "filterFreshTurn" },
   { toggle: "normalizeBasis", range: null, numInput: null, filter: "filterNormalizeBasis" },
+  { toggle: "useSteamrollerGuard", range: "maxCounter60mRange", numInput: "maxCounter60mNum", filter: "filterSteamroller" },
 ];
 
 function syncRangeAndNumber(rangeId, numId) {
@@ -259,6 +260,8 @@ function getParams() {
     minVenues: Math.max(1, Math.round(num("minVenuesNum", 2))),
     useFreshTurn: $("useFreshTurn") ? $("useFreshTurn").checked : false,
     normalizeBasis: $("normalizeBasis") ? $("normalizeBasis").checked : false,
+    useSteamrollerGuard: $("useSteamrollerGuard") ? $("useSteamrollerGuard").checked : false,
+    maxCounter60m: num("maxCounter60mNum", 300),
     hours: whenState.hours,
     weekdays: whenState.weekdays,
     sessions: whenState.sessions,
@@ -277,6 +280,7 @@ function setParams(params) {
     maxDistance: ["maxDistanceRange", "maxDistanceNum"],
     minVolume: ["minVolumeRange", "minVolumeNum"],
     minVenues: ["minVenuesRange", "minVenuesNum"],
+    maxCounter60m: ["maxCounter60mRange", "maxCounter60mNum"],
   };
   for (const [key, ids] of Object.entries(map)) {
     if (params[key] == null) continue;
@@ -288,7 +292,7 @@ function setParams(params) {
   }
   if (params.fillMode) $("fillMode").value = params.fillMode;
   if (params.btcSource) $("btcSource").value = params.btcSource;
-  const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues", "useFreshTurn", "normalizeBasis"];
+  const toggles = ["useLastMinutes", "useOdds", "useSpot", "useTwap", "useVolume", "useVenues", "useFreshTurn", "normalizeBasis", "useSteamrollerGuard"];
   for (const t of toggles) {
     if (params[t] != null && $(t)) $(t).checked = params[t];
   }

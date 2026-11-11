@@ -33,7 +33,9 @@ from pmtrader.ui.server import serve_background
 from pmtrader.streams.binance import (
     BinanceFuturesStream,
     BinanceSpotStream,
+    fetch_initial_venue_basis,
     fetch_prev_5m_delta,
+    fetch_prev_60m_delta,
 )
 from pmtrader.streams.bybit import BybitSpotStream
 from pmtrader.streams.coinbase import CoinbaseSpotStream
@@ -84,6 +86,7 @@ class Trader:
         self.coinbase = CoinbaseSpotStream(on_price_tick=self._on_price)
         self.bybit = BybitSpotStream(on_price_tick=self._on_price)
         self._prev_5m_cache: dict[int, float] = {}
+        self._prev_60m_cache: dict[int, float] = {}
 
     async def run(self) -> None:
         self.orders.connect()
@@ -104,6 +107,8 @@ class Trader:
         self.binance_futures.start()
         self.coinbase.start()
         self.bybit.start()
+        if self.cfg.normalize_basis:
+            self.snap.seed_venue_basis(await fetch_initial_venue_basis(self.current.start))
         await self._arm_prev_5m(self.current.start)
         self._tasks = [
             asyncio.create_task(self._window_loop(), name="window-loop"),
@@ -287,14 +292,22 @@ class Trader:
         self.snap.apply_twap(tick)
 
     async def _arm_prev_5m(self, window_start: int) -> None:
-        """Load the closed 5m BTC candle delta [window_start - 300, window_start]."""
+        """Load the closed 5m and 60m BTC candle deltas prior to window_start."""
         if window_start in self._prev_5m_cache:
             self.snap.prev_5m_delta = self._prev_5m_cache[window_start]
-            return
-        delta = await fetch_prev_5m_delta(window_start)
-        if delta is not None:
-            self._prev_5m_cache[window_start] = delta
-            self.snap.prev_5m_delta = delta
+        else:
+            delta = await fetch_prev_5m_delta(window_start)
+            if delta is not None:
+                self._prev_5m_cache[window_start] = delta
+                self.snap.prev_5m_delta = delta
+        if self.cfg.max_counter_60m is not None:
+            if window_start in self._prev_60m_cache:
+                self.snap.prev_60m_delta = self._prev_60m_cache[window_start]
+            else:
+                delta_60m = await fetch_prev_60m_delta(window_start)
+                if delta_60m is not None:
+                    self._prev_60m_cache[window_start] = delta_60m
+                    self.snap.prev_60m_delta = delta_60m
 
     async def _sample_loop(self) -> None:
         """Evaluate once per second at the Lab's tape boundary, not on every tick."""

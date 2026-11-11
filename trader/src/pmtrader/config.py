@@ -58,6 +58,7 @@ class TraderConfig:
     min_venues: int = 2
     use_fresh_turn: bool = False
     normalize_basis: bool = False
+    max_counter_60m: float | None = None
     stake_usd: float = 10.0
     min_seconds_left: float = 3.0
     tick_size: str = "0.01"
@@ -101,6 +102,10 @@ class TraderConfig:
                     self.elapsed_to_min,
                     self.elapsed_from_min,
                 )
+        if self.max_counter_60m is not None:
+            self.max_counter_60m = float(self.max_counter_60m)
+            if self.max_counter_60m <= 0:
+                self.max_counter_60m = None
 
     def uses_elapsed_band(self) -> bool:
         return self.elapsed_from_min is not None or self.elapsed_to_min is not None

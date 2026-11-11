@@ -1,8 +1,8 @@
 # Match Strategy Lab. One FAK buy per 5m window when every enabled filter is true.
 
 # Minutes from window open.
-elapsed_from_min = 0.25
-elapsed_to_min = 2.0
+elapsed_from_min = 0.0
+elapsed_to_min = 1.5
 
 # Trigger band: chosen side's mid must *enter* [odds_min, odds_max] during the elapsed window
 # (already inside at the first in-band tick does not count).
@@ -28,6 +28,9 @@ use_fresh_turn = true
 # Normalize USDT venues (Binance, Bybit, Futures) to USD by subtracting their
 # trailing 60m basis vs 60s TWAP (restores DOWN signals when USDT trades at a premium).
 normalize_basis = true
+# 1-hour steamroller guard: skip counter-trend entries when the trailing 60m
+# BTC move against our trade side exceeds this dollar cap (0 or omit = off).
+max_counter_60m = 300
 
 stake_usd = 50
 min_seconds_left = 3

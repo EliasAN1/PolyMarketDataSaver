@@ -166,6 +166,16 @@
           </div>
           <div class="lab-filter-hint">Subtracts the trailing 60-minute (12-window) median <code>venue − TWAP</code> spread from Binance and Bybit so USDT venues are evaluated in USD alongside Coinbase and Chainlink TWAP (restoring DOWN signals when USDT trades at a premium).</div>
         </div>
+
+        <div class="lab-filter" id="filterSteamroller">
+          <div class="lab-filter-head">
+            <label class="switch"><input type="checkbox" id="useSteamrollerGuard" /><span class="switch-track"><span class="switch-thumb"></span></span></label>
+            <span class="lab-filter-title">1h steamroller cap ≤ $</span>
+            <input class="lab-filter-num" id="maxCounter60mNum" type="number" min="50" max="1000" step="25" value="300" />
+          </div>
+          <input class="lab-filter-range" id="maxCounter60mRange" type="range" min="50" max="1000" step="25" value="300" />
+          <div class="lab-filter-hint">Skips counter-trend entries when the trailing 60m (12-window) BTC move against the chosen side exceeds this dollar cap.</div>
+        </div>
       </div>
 
       <div class="lab-group">

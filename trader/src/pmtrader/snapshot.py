@@ -78,8 +78,11 @@ class LiveSnapshot:
     in_watch: bool = False
     # Close minus open of the previous 5m BTC candle (window_start - 300 .. window_start).
     prev_5m_delta: float | None = None
+    # Net BTC move across the trailing 12 closed 5m candles (60 minutes).
+    prev_60m_delta: float | None = None
     _first_btc: float | None = None
     _last_btc: float | None = None
+    _delta_history: list[float] = field(default_factory=list)
     # Trailing 60m (12-window) median of (venue_price - twap) for USDT venues.
     normalize_basis: bool = False
     venue_basis: dict[str, float] = field(
@@ -110,8 +113,14 @@ class LiveSnapshot:
             and self._last_btc is not None
         ):
             self.prev_5m_delta = round(self._last_btc - self._first_btc, 2)
+            self._delta_history.append(self.prev_5m_delta)
+            if len(self._delta_history) > BASIS_HISTORY_WINDOWS:
+                del self._delta_history[:-BASIS_HISTORY_WINDOWS]
+            if len(self._delta_history) >= 6:
+                self.prev_60m_delta = round(sum(self._delta_history), 2)
         elif window_start != self.window_start:
             self.prev_5m_delta = None
+            self.prev_60m_delta = None
         if self.window_start > 0 and window_start != self.window_start:
             for name in USDT_SOURCES:
                 samples = self._win_spreads.get(name) or []

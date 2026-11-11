@@ -154,6 +154,56 @@ class OrderClient:
             logger.error("FAK BUY %s failed: %s %s", side.upper(), error, response)
         return result
 
+    def place_fak_sell(self, *, token_id: str, shares: float, limit: float) -> OrderResult:
+        aligned = _align_price(limit, float(self.tick_size)) if limit > 0 else 0.0
+        size = float(Decimal(str(shares)).quantize(Decimal("0.01"), rounding=ROUND_DOWN))
+        if size <= 0:
+            return OrderResult(
+                ok=False,
+                dry_run=self.dry_run,
+                side="sell",
+                token_id=token_id,
+                limit=aligned,
+                stake_usd=0.0,
+                response=None,
+                error="invalid amounts: share size rounded to 0",
+            )
+        tick = self.tick_size
+        if self._client is not None:
+            getter = getattr(self._client, "get_tick_size", None)
+            if getter is not None:
+                try:
+                    tick = str(getter(token_id))
+                except Exception:
+                    pass
+        if self.dry_run or self._client is None:
+            logger.info("DRY-RUN FAK SELL token=%s… limit=%.2f shares=%.2f", token_id[:12], aligned, size)
+            return OrderResult(
+                ok=True,
+                dry_run=True,
+                side="sell",
+                token_id=token_id,
+                limit=aligned,
+                stake_usd=round(aligned * size, 4),
+                response={"dry_run": True, "shares": size},
+            )
+        response, error = _post_fak_sell(self._client, token_id, aligned, size, tick)
+        ok = error is None and _response_ok(response)
+        if ok:
+            logger.info("FAK SELL posted limit=%.2f shares=%.2f resp=%s", aligned, size, response)
+        else:
+            logger.error("FAK SELL failed: %s %s", error, response)
+        return OrderResult(
+            ok=ok,
+            dry_run=False,
+            side="sell",
+            token_id=token_id,
+            limit=aligned,
+            stake_usd=round(aligned * size, 4),
+            response=response if isinstance(response, dict) else {"raw": response},
+            error=error if not ok else None,
+        )
+
     def append_log(self, record: dict[str, Any]) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         if "ts" not in record:
@@ -263,14 +313,53 @@ def _post_fak(
             return None, str(fallback)
 
 
-def _market_args(token_id: str, amount: float, limit: float) -> Any:
+def _post_fak_sell(
+    client: Any,
+    token_id: str,
+    limit: float,
+    shares: float,
+    tick_size: str,
+) -> tuple[Any, str | None]:
+    from py_clob_client_v2 import OrderType, PartialCreateOrderOptions, Side
+
+    options = PartialCreateOrderOptions(tick_size=tick_size)
+    args = _market_args(token_id, shares, limit, side="SELL")
+    try:
+        response = client.create_and_post_market_order(
+            order_args=args,
+            options=options,
+            order_type=OrderType.FAK,
+        )
+        return response, None
+    except TypeError:
+        try:
+            response = client.create_and_post_market_order(args, options, OrderType.FAK)
+            return response, None
+        except Exception as exc:
+            return None, str(exc)
+    except Exception as exc:
+        logger.warning("Market FAK sell failed (%s); trying limit FAK", exc)
+        try:
+            from py_clob_client_v2 import OrderArgs
+
+            response = client.create_and_post_order(
+                order_args=OrderArgs(token_id=token_id, price=max(limit, 0.01), size=shares, side=Side.SELL),
+                options=options,
+                order_type=OrderType.FAK,
+            )
+            return response, None
+        except Exception as fallback:
+            return None, str(fallback)
+
+
+def _market_args(token_id: str, amount: float, limit: float, side: str = "BUY") -> Any:
     from py_clob_client_v2 import MarketOrderArgs, OrderType, Side
 
     params = inspect.signature(MarketOrderArgs).parameters
     kwargs: dict[str, Any] = {
         "token_id": token_id,
         "amount": amount,
-        "side": Side.BUY,
+        "side": Side.SELL if str(side).upper() == "SELL" else Side.BUY,
     }
     if "order_type" in params:
         kwargs["order_type"] = OrderType.FAK

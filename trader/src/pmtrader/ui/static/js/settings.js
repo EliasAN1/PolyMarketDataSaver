@@ -1,14 +1,66 @@
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MARKETS = [
-  { key: "tokyo_open", short: "Tokyo", local: "02:00–04:30" },
-  { key: "london_open", short: "Lon open", local: "09:00–12:00" },
-  { key: "wall_open", short: "NY open", local: "15:30–18:30" },
-  { key: "asia", short: "Asia", local: "02:00–10:00" },
-  { key: "london", short: "London", local: "09:00–18:30" },
-  { key: "wall", short: "Wall St", local: "15:00–23:00" },
-  { key: "overlap", short: "Overlap", local: "15:00–18:30" },
-  { key: "off", short: "Off", local: "23:00–02:00" },
+// Real exchange hours. London and New York stay on the Berlin clock across DST.
+// Tokyo does not change its clock, so those two windows move by an hour in summer.
+const MARKET_HOURS = [
+  { key: "tokyo_open", short: "Tokyo", zone: "Asia/Tokyo", start: [9, 0], end: [11, 30] },
+  { key: "london_open", short: "Lon open", zone: "Europe/London", start: [8, 0], end: [11, 0] },
+  { key: "wall_open", short: "NY open", zone: "America/New_York", start: [9, 30], end: [12, 30] },
+  { key: "asia", short: "Asia", zone: "Asia/Tokyo", start: [9, 0], end: [17, 0] },
+  { key: "london", short: "London", zone: "Europe/London", start: [8, 0], end: [16, 30] },
+  { key: "wall", short: "Wall St", zone: "America/New_York", start: [9, 30], end: [16, 0] },
 ];
+
+function zoneParts(timeZone, date) {
+  const out = {};
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+  }).formatToParts(date)) out[part.type] = part.value;
+  return out;
+}
+
+function atZone(timeZone, year, month, day, hour, minute) {
+  let utc = Date.UTC(year, month - 1, day, hour, minute);
+  for (let i = 0; i < 3; i += 1) {
+    const part = zoneParts(timeZone, new Date(utc));
+    const shown = Date.UTC(+part.year, +part.month - 1, +part.day, +part.hour, +part.minute);
+    utc += Date.UTC(year, month - 1, day, hour, minute) - shown;
+  }
+  return new Date(utc);
+}
+
+function hm(date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function span(zone, start, end, day = zoneParts(zone, new Date())) {
+  const open = atZone(zone, +day.year, +day.month, +day.day, start[0], start[1]);
+  let close = atZone(zone, +day.year, +day.month, +day.day, end[0], end[1]);
+  if (close <= open) close = new Date(close.getTime() + 86400000);
+  return [open, close];
+}
+
+function localWindow(zone, start, end) {
+  const [open, close] = span(zone, start, end);
+  return `${hm(open)}–${hm(close)}`;
+}
+
+function fallbackMarkets() {
+  const rows = MARKET_HOURS.map((row) => ({ key: row.key, short: row.short, local: localWindow(row.zone, row.start, row.end) }));
+  const [lonOpen, lonClose] = span("Europe/London", [8, 0], [16, 30]);
+  const [nyOpen, nyClose] = span("America/New_York", [9, 30], [16, 0]);
+  const overlapStart = lonOpen > nyOpen ? lonOpen : nyOpen;
+  const overlapEnd = lonClose < nyClose ? lonClose : nyClose;
+  const nyDay = zoneParts("America/New_York", new Date());
+  let tokyoOpen = atZone("Asia/Tokyo", +nyDay.year, +nyDay.month, +nyDay.day, 9, 0);
+  if (tokyoOpen <= nyClose) tokyoOpen = new Date(tokyoOpen.getTime() + 86400000);
+  rows.push(
+    { key: "overlap", short: "Overlap", local: `${hm(overlapStart)}–${hm(overlapEnd)}` },
+    { key: "off", short: "Off", local: `${hm(nyClose)}–${hm(tokyoOpen)}` },
+  );
+  return rows;
+}
+
+const MARKETS = fallbackMarkets();
 
 const draft = {
   hours: new Set(),
@@ -62,7 +114,7 @@ function applyPayload(data) {
     markets = catalog.map((row) => ({
       key: row.key,
       short: row.short || row.label || row.key,
-      local: String(row.local || "").replace(" local", ""),
+      local: String(row.local || "").replace(/\s*local\s*$/i, ""),
     }));
     renderMarkets(markets);
   }

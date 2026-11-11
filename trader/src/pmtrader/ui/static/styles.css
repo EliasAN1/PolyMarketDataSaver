@@ -682,6 +682,65 @@ body {
   line-height: 1.15;
 }
 
+.pillar-value .price-dir {
+  font-size: 0.62em;
+  margin-left: 0.28em;
+}
+
+.price-reel {
+  display: inline-block;
+  white-space: nowrap;
+  letter-spacing: 0;
+  vertical-align: bottom;
+}
+
+.price-char {
+  display: inline-block;
+  height: 1.15em;
+  line-height: 1.15;
+  vertical-align: bottom;
+}
+
+.digit-slot {
+  display: inline-block;
+  vertical-align: bottom;
+  width: 1ch;
+  min-width: 1ch;
+  max-width: 1ch;
+  height: 1.15em;
+  overflow: hidden;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.digit-strip {
+  display: flex;
+  flex-direction: column;
+  width: 1ch;
+}
+
+.digit-strip > span {
+  flex: 0 0 1.15em;
+  width: 1ch;
+  height: 1.15em;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.digit-strip.is-down { transform: translateY(calc((1 - var(--n)) * 1.15em)); }
+.digit-strip.is-up { transform: translateY(0); }
+.digit-strip.is-go { transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1); }
+.digit-strip.is-down.is-go { transform: translateY(0); }
+.digit-strip.is-up.is-go { transform: translateY(calc((1 - var(--n)) * 1.15em)); }
+
+.pillar-value.up,
+.pillar-value.down { color: var(--text-main); }
+
+.pillar-value.up .price-chg,
+.pillar-value.up .price-dir { color: var(--emerald-light); }
+.pillar-value.down .price-chg,
+.pillar-value.down .price-dir { color: var(--crimson-light); }
+
 .pillar-delta {
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -1893,27 +1952,57 @@ body {
   margin-bottom: 10px;
 }
 
-.profile-close-row {
+.profile-close {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.profile-close-copy { min-width: 0; flex: 1 1 180px; }
+.profile-close-copy h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-main);
+}
+.profile-close-copy p { margin: 0; font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
+.profile-close-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 12px 0 4px;
+  margin: 0;
+  flex: 1 1 220px;
+  max-width: 320px;
 }
 .profile-close-btn {
   appearance: none;
-  border: 1px solid var(--border-danger);
-  background: rgba(244, 63, 94, 0.12);
-  color: var(--crimson-light);
+  min-height: 40px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
   font: inherit;
   font-weight: 600;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  border-radius: 10px;
   cursor: pointer;
 }
-.profile-close-btn:hover { background: rgba(244, 63, 94, 0.22); }
+.profile-close-btn[data-close-run] {
+  background: #173e2a;
+  color: var(--emerald-light);
+  border-color: #2a5a40;
+}
+.profile-close-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.profile-close-btn[data-close-run]:hover { background: #1c4a32; }
 .profile-close-btn:disabled { opacity: 0.5; cursor: wait; }
-.profile-close-status { font-size: 0.78rem; color: var(--text-muted); margin: 0; white-space: pre-wrap; }
+.profile-close-status { flex: 1 0 100%; font-size: 0.78rem; color: var(--text-muted); margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-close-status:empty { display: none; }
 
 /* ==========================================================================
    Loading Shimmer State

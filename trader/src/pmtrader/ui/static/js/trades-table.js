@@ -1,4 +1,4 @@
-import { compactTradeHtml } from "./compact-ui.js?v=26";
+import { compactTradeHtml, tradeDetailKey } from "./compact-ui.js?v=27";
 import { fmtTs, fmtOdds, slugUrl, slugLabel, outcomeLabel, pnlAtStake, outcomeBadge } from "./format.js?v=19";
 import { tradePnl, isStatClosed, effectiveWon, countsInStats } from "./parse.js?v=19";
 
@@ -70,6 +70,7 @@ export function renderTradesTable(trades, root = document) {
   for (const t of sorted.slice(0, visibleCount)) {
     const tr = document.createElement("tr");
     tr.className = "trade-row";
+    tr.dataset.tradeDetail = tradeDetailKey(t);
     if (t.oid) tr.dataset.oid = t.oid;
     if (!t.resolved) tr.classList.add("open");
 

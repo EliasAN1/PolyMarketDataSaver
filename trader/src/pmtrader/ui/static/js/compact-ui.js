@@ -14,8 +14,18 @@ export function registerTrades(trades) {
   tradeKeys = new WeakMap([...registry].map(([key, t]) => [t, key]));
 }
 
+export function tradeDetailKey(t) {
+  const existing = tradeKeys.get(t);
+  if (existing) return existing;
+  let key = String(t?.oid || `trade-${registry.size}`);
+  while (registry.has(key) && registry.get(key) !== t) key = `trade-${registry.size}-${key}`;
+  registry.set(key, t);
+  tradeKeys.set(t, key);
+  return key;
+}
+
 function keyFor(t) {
-  return tradeKeys.get(t) || '';
+  return tradeDetailKey(t);
 }
 
 export function compactTradeHtml(t) {
@@ -100,6 +110,7 @@ export function initCompactUI() {
   document.addEventListener('click', e => {
     const nav = e.target.closest('[data-go-tab]');
     if (nav) { selectTab(nav.dataset.goTab); window.scrollTo({ top: 0 }); }
+    if (e.target.closest('a')) return;
     const button = e.target.closest('[data-trade-detail]');
     if (!button) return;
     const t = registry.get(button.dataset.tradeDetail);

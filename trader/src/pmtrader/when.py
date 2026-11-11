@@ -7,8 +7,9 @@ Tokyo / London / Wall Street opens are not dropped.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, Iterable, Sequence
+from zoneinfo import ZoneInfo
 
 # JS getDay(): 0=Sun .. 6=Sat
 WEEKDAY_NAMES = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
@@ -172,18 +173,68 @@ def when_label(
     return " · ".join(parts) if parts else "All hours"
 
 
-def session_catalog() -> list[dict[str, Any]]:
-    offset = datetime.now().astimezone().utcoffset()
-    east = int(offset.total_seconds() // 60) if offset is not None else 0
+# Clock hours of the actual market, in that market's timezone. The UTC filter
+# windows above stay widened so a DST change cannot drop the open. Labels show
+# today's real open and close in the machine's local timezone.
+_MARKET_HOURS: dict[str, tuple[str, time, time]] = {
+    "tokyo_open": ("Asia/Tokyo", time(9, 0), time(11, 30)),
+    "london_open": ("Europe/London", time(8, 0), time(11, 0)),
+    "wall_open": ("America/New_York", time(9, 30), time(12, 30)),
+    "asia": ("Asia/Tokyo", time(9, 0), time(17, 0)),
+    "london": ("Europe/London", time(8, 0), time(16, 30)),
+    "wall": ("America/New_York", time(9, 30), time(16, 0)),
+}
+
+
+def _zoned_span(day: datetime, zone: ZoneInfo, start: time, end: time) -> tuple[datetime, datetime]:
+    start_at = datetime.combine(day, start, zone)
+    end_at = datetime.combine(day, end, zone)
+    if end_at <= start_at:
+        end_at += timedelta(days=1)
+    return start_at, end_at
+
+
+def _market_span(key: str, now: datetime) -> tuple[datetime, datetime]:
+    if key in _MARKET_HOURS:
+        zone_name, start, end = _MARKET_HOURS[key]
+        zone = ZoneInfo(zone_name)
+        return _zoned_span(now.astimezone(zone), zone, start, end)
+    ny = ZoneInfo("America/New_York")
+    london = ZoneInfo("Europe/London")
+    tokyo = ZoneInfo("Asia/Tokyo")
+    ny_now = now.astimezone(ny)
+    if key == "overlap":
+        lon_now = now.astimezone(london)
+        lon_start, lon_end = _zoned_span(lon_now, london, time(8, 0), time(16, 30))
+        ny_start, ny_end = _zoned_span(ny_now, ny, time(9, 30), time(16, 0))
+        return max(lon_start, ny_start), min(lon_end, ny_end)
+    close, _ = _zoned_span(ny_now, ny, time(16, 0), time(16, 1))
+    reopen = datetime.combine(ny_now.date(), time(9, 0), tokyo)
+    if reopen <= close:
+        reopen += timedelta(days=1)
+    return close, reopen
+
+
+def _clock(moment: datetime, zone: datetime.tzinfo) -> str:
+    local = moment.astimezone(zone)
+    return f"{local.hour:02d}:{local.minute:02d}"
+
+
+def session_catalog(now: datetime | None = None) -> list[dict[str, Any]]:
+    moment = now or datetime.now().astimezone()
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    local_zone = moment.tzinfo
     rows = []
     for session in SESSIONS:
+        start, end = _market_span(session["key"], moment)
         rows.append(
             {
                 "key": session["key"],
                 "label": session["label"],
                 "short": session["short"],
-                "utc": f"{clock_utc(session['start'])}–{clock_utc(session['end'])} UTC",
-                "local": f"{clock_utc(session['start'] + east)}–{clock_utc(session['end'] + east)} local",
+                "utc": f"{_clock(start, timezone.utc)}–{_clock(end, timezone.utc)} UTC",
+                "local": f"{_clock(start, local_zone)}–{_clock(end, local_zone)} local",
             }
         )
     return rows

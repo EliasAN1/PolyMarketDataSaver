@@ -1,7 +1,7 @@
 # Match Strategy Lab. One FAK buy per 5m window when every enabled filter is true.
 
 # Minutes from window open.
-elapsed_from_min = 0.0
+elapsed_from_min = 0.25
 elapsed_to_min = 2.0
 
 # Trigger band: chosen side's mid must *enter* [odds_min, odds_max] during the elapsed window
@@ -16,7 +16,7 @@ fak_limit = 0.60
 use_btc_distance = true
 # Spot venue that stands in for BTC (Lab "BTC reference"): binance_spot | coinbase_spot | bybit_spot | median
 btc_source = "binance_spot"
-min_btc_away = 0
+min_btc_away = 5
 max_btc_away = 200
 
 use_twap = true

@@ -92,7 +92,8 @@ function orderNote(data) {
 
 function setOrderNote(el, data, traded) {
   if (!el) return;
-  const text = traded ? orderNote(data) : "";
+  const failed = traded && data?.order && data.order.ok === false;
+  const text = failed ? orderNote(data) : "";
   if (!text) {
     el.hidden = true;
     el.textContent = "";
@@ -101,7 +102,7 @@ function setOrderNote(el, data, traded) {
   }
   el.hidden = false;
   el.textContent = text;
-  el.className = `radar-order-note ${data?.order?.ok ? "is-ok" : "is-fail"}`;
+  el.className = "radar-order-note is-fail";
 }
 
 function setStateTag(el, { cls, label, icon, hint }) {
@@ -124,6 +125,137 @@ function fmtSignedUsd(val, digits = 1) {
   return `${sign}$${abs} ${arrow}`.trim();
 }
 
+const lastMove = { btc: null, twap: null };
+const ROLL_MS = 520;
+
+function digitPlaces(text) {
+  const [head, frac = ""] = String(text).replace(/[$,]/g, "").split(".");
+  const places = new Map();
+  const intDigits = head.replace(/\D/g, "");
+  for (let i = 0; i < intDigits.length; i++) places.set(intDigits.length - 1 - i, intDigits[i]);
+  for (let i = 0; i < frac.length; i++) {
+    if (/\d/.test(frac[i])) places.set(-(i + 1), frac[i]);
+  }
+  return places;
+}
+
+function coloredPrice(fromText, toText) {
+  const from = digitPlaces(fromText);
+  const intLen = toText.replace(/[$,]/g, "").split(".")[0].replace(/\D/g, "").length;
+  let intSeen = 0;
+  let fracSeen = 0;
+  let inFrac = false;
+  let seenChange = false;
+  let html = "";
+  let changed = "";
+  for (const ch of toText) {
+    if (ch === ".") inFrac = true;
+    if (!seenChange && /\d/.test(ch)) {
+      const placeChanged = inFrac
+        ? from.get(-(++fracSeen)) !== ch
+        : from.get(intLen - 1 - intSeen++) !== ch;
+      if (placeChanged) seenChange = true;
+    }
+    if (seenChange) changed += ch;
+    else html += ch;
+  }
+  return changed ? `${html}<span class="price-chg">${changed}</span>` : html;
+}
+
+function priceBody(text, dir, baseText) {
+  return baseText && dir ? coloredPrice(baseText, text) : text;
+}
+
+function priceHtml(num, dir, baseText) {
+  const text = fmtUsd(num, 2);
+  const arrow = dir === "up" ? "▲" : dir === "down" ? "▼" : "";
+  return `${priceBody(text, dir, baseText)}${arrow ? `<span class="price-dir">${arrow}</span>` : ""}`;
+}
+
+function digitPath(fromDigit, toDigit, preferDown) {
+  const from = Number(fromDigit);
+  const to = Number(toDigit);
+  const down = (from - to + 10) % 10;
+  const up = (to - from + 10) % 10;
+  if (down === 0) return [];
+  const step = down < up || (down === up && preferDown) ? -1 : 1;
+  const hops = step === -1 ? down : up;
+  const path = [];
+  let cur = from;
+  for (let i = 0; i < hops; i++) {
+    cur = (cur + step + 10) % 10;
+    path.push(String(cur));
+  }
+  return path;
+}
+
+function rollingHtml(fromText, toText, dir) {
+  const fromPlaces = digitPlaces(fromText);
+  const preferDown = dir === "down";
+  const intLen = toText.replace(/[$,]/g, "").split(".")[0].replace(/\D/g, "").length;
+  let intSeen = 0;
+  let fracSeen = 0;
+  let inFrac = false;
+  const glyphs = [];
+  for (const ch of toText) {
+    if (ch === ".") inFrac = true;
+    if (!/\d/.test(ch)) {
+      glyphs.push({ ch });
+      continue;
+    }
+    const place = inFrac ? -(++fracSeen) : intLen - 1 - intSeen++;
+    const fromDigit = fromPlaces.get(place) ?? "0";
+    const path = digitPath(fromDigit, ch, preferDown);
+    glyphs.push({ ch, fromDigit, path });
+  }
+  const first = glyphs.findIndex((glyph) => glyph.path?.length);
+  return glyphs.map((glyph, index) => {
+    const color = first >= 0 && index >= first ? " price-chg" : "";
+    if (!glyph.path) return `<span class="price-char${color}">${glyph.ch}</span>`;
+    if (!glyph.path.length) return `<span class="digit-slot"><span class="digit-strip${color}"><span>${glyph.ch}</span></span></span>`;
+    const rollingDown = Number(glyph.path[0]) === (Number(glyph.fromDigit) + 9) % 10;
+    const digits = rollingDown
+      ? [...glyph.path].reverse().concat(glyph.fromDigit)
+      : [glyph.fromDigit, ...glyph.path];
+    return `<span class="digit-slot"><span class="digit-strip ${rollingDown ? "is-down" : "is-up"}${color}" style="--n:${digits.length}">${digits.map((digit) => `<span>${digit}</span>`).join("")}</span></span>`;
+  }).join("");
+}
+
+function paintMovingPrice(el, value, key) {
+  if (!el) return;
+  const num = value == null || Number.isNaN(Number(value)) ? null : Number(value);
+  if (num == null) {
+    el.textContent = "—";
+    el.className = "pillar-value mono";
+    lastMove[key] = null;
+    return;
+  }
+  const text = fmtUsd(num, 2);
+  const state = lastMove[key];
+  if (!state) {
+    el.innerHTML = `<span class="price-reel">${rollingHtml(text, text, "up")}</span>`;
+    el.className = "pillar-value mono";
+    lastMove[key] = { value: num, text, dir: "", token: 0, animating: false, baseText: null };
+    return;
+  }
+  if (text === state.text) return;
+  const dir = num > state.value ? "up" : "down";
+  const token = (state.token || 0) + 1;
+  const fromText = state.text;
+  lastMove[key] = { value: num, text, dir, token, animating: true, baseText: fromText };
+  el.className = `pillar-value mono ${dir}`;
+  const arrow = `<span class="price-dir">${dir === "up" ? "▲" : "▼"}</span>`;
+  el.innerHTML = `<span class="price-reel">${rollingHtml(fromText, text, dir)}</span>${arrow}`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (lastMove[key]?.token !== token) return;
+    el.querySelectorAll(".digit-strip").forEach((strip) => strip.classList.add("is-go"));
+  }));
+  setTimeout(() => {
+    if (lastMove[key]?.token !== token) return;
+    lastMove[key].animating = false;
+  }, ROLL_MS + 40);
+}
+
 function fmtOdds(val) {
   if (val == null || Number.isNaN(val)) return "—";
   return Number(val).toFixed(2);
@@ -135,7 +267,13 @@ function wireChecklistToggle(root) {
   const toggle = root.getElementById("checklist-toggle");
   if (!toggle) return;
   checklistWired = true;
-  toggle.addEventListener("click", () => document.dispatchEvent(new CustomEvent("ui:checks")));
+  toggle.addEventListener("click", () => {
+    if (window.matchMedia("(max-width: 640px)").matches) {
+      document.dispatchEvent(new CustomEvent("ui:checks"));
+      return;
+    }
+    root.getElementById("strategy-checklist")?.classList.toggle("is-collapsed");
+  });
 }
 
 let dayWired = false;
@@ -326,13 +464,15 @@ export function renderLive(data, root = document) {
     });
     brandLive = { cls: "is-failed", title: short };
   } else if (traded) {
+    const sentSide = String(data.order?.side || data.side || "").toLowerCase();
+    const sentLabel = sentSide === "down" ? "Sent down" : sentSide === "up" ? "Sent up" : "Sent";
     setStateTag(radarStateTag, {
       cls: "state-sent",
-      label: "Sent",
+      label: sentLabel,
       icon: "send",
-      hint: orderNote(data) || "Order sent",
+      hint: sentLabel,
     });
-    brandLive = { cls: "", title: "Sent" };
+    brandLive = { cls: "", title: sentLabel };
   } else if (state === "ready") {
     setStateTag(radarStateTag, { cls: "state-ready", label: "Ready", icon: "check", hint: "Trigger ready" });
     brandLive = { cls: "", title: "Ready" };
@@ -364,6 +504,10 @@ export function renderLive(data, root = document) {
 
   setOrderNote(root.getElementById("radar-order-note"), data, traded);
   paintBrandLive(root, brandLive);
+  if (traded && data.order?.ok !== false) {
+    const sentHint = root.getElementById("live-state-hint");
+    if (sentHint) sentHint.textContent = "";
+  }
   const against = againstSignalNote(data);
   if (against) {
     const hint = root.getElementById("live-state-hint");
@@ -410,9 +554,7 @@ export function renderLive(data, root = document) {
   const btcSub = root.getElementById("pillar-btc-sub");
 
   if (btcLabelEl) btcLabelEl.textContent = venue;
-  if (btcSpotEl) {
-    btcSpotEl.textContent = data.btc != null ? fmtUsd(data.btc, 2) : "—";
-  }
+  paintMovingPrice(btcSpotEl, data.btc, "btc");
   if (btcDeltaEl) {
     btcDeltaEl.textContent = data.btc_delta != null ? `${fmtSignedUsd(data.btc_delta, 1)} vs PTB` : "vs PTB";
     btcDeltaEl.className = `pillar-delta ${data.btc_delta > 0 ? "up" : data.btc_delta < 0 ? "down" : ""}`;
@@ -480,9 +622,7 @@ export function renderLive(data, root = document) {
   const twapAgreeBadge = root.getElementById("twap-agree-badge");
   const twapSub = root.getElementById("pillar-twap-sub");
 
-  if (twapAbsEl) {
-    twapAbsEl.textContent = data.twap != null ? fmtUsd(data.twap, 2) : "—";
-  }
+  paintMovingPrice(twapAbsEl, data.twap, "twap");
   if (twapDeltaEl) {
     twapDeltaEl.textContent = data.twap_delta != null ? `${fmtSignedUsd(data.twap_delta, 1)} vs PTB` : "vs PTB";
     twapDeltaEl.className = `pillar-delta ${data.twap_delta > 0 ? "up" : data.twap_delta < 0 ? "down" : ""}`;

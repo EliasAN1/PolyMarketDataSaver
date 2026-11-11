@@ -1,16 +1,16 @@
-import { initCompactUI, renderCompactOverview, esc } from "./compact-ui.js?v=26";
+import { initCompactUI, renderCompactOverview, esc } from "./compact-ui.js?v=27";
 import { buildTrades, tradePnl, effectiveWon, isStatClosed, countsInStats } from "./parse.js?v=19";
 import { computeSummary, fmtPct, greeting, formatRecordLine, fmtUsd, fmtCash } from "./stats.js?v=25";
 import { loadFromServer, loadBalanceFromServer, listLogSources } from "./load.js?v=2";
-import { renderTradesTable, bindTradesTableSort } from "./trades-table.js?v=23";
+import { renderTradesTable, bindTradesTableSort } from "./trades-table.js?v=24";
 import { computeRecap, renderRecapHtml, startRecapCountdown } from "./recap.js?v=19";
 import { startAutoRefresh } from "./refresh.js";
 import { currentUsd, tweenUsd, flashDelta, pulseEl } from "./animate.js";
-import { initProfile, loadProfile } from "./profile.js?v=23";
-import { startLivePoll } from "./live.js?v=28";
+import { initProfile, loadProfile } from "./profile.js?v=25";
+import { startLivePoll } from "./live.js?v=38";
 import { mountEquityChart, initEquityExpand } from "./performance-chart.js?v=24";
 import { initTabs } from "./tabs.js?v=24";
-import { initSettings, loadSettings } from "./settings.js?v=2";
+import { initSettings, loadSettings } from "./settings.js?v=4";
 import { initCalendar, renderCalendar } from "./calendar.js?v=23";
 
 const state = {

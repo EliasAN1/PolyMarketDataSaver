@@ -77,22 +77,60 @@ def _balance(client: Any, asset_type: str) -> Any:
 
 def _data_api_snapshot(wallet: str, errors: list[str]) -> dict[str, Any]:
     out: dict[str, Any] = {}
+    # Data API v1 returned 410 on 2026-11-02. v2 uses the same host with a /v2 prefix.
     paths = {
-        "value": f"/value?user={wallet}",
-        "positions": f"/positions?user={wallet}",
-        "trades": f"/trades?user={wallet}&limit=50",
-        "activity": f"/activity?user={wallet}&limit=50",
+        "value": f"/v2/value?user={wallet}",
+        "positions": f"/v2/positions?user={wallet}&limit=50",
+        "trades": f"/v2/trades?user={wallet}&limit=50",
+        "activity": f"/v2/activity?user={wallet}&limit=50",
     }
     with httpx.Client(base_url=DATA_API, timeout=15.0) as http:
         for key, path in paths.items():
             try:
                 response = http.get(path)
                 response.raise_for_status()
-                out[key] = response.json()
+                out[key] = adapt_data_payload(key, response.json())
             except Exception as exc:
                 errors.append(f"data.{key}: {exc}")
                 out[key] = None
     return out
+
+
+def adapt_data_payload(key: str, payload: Any) -> Any:
+    """Turn a v2 envelope into the field names the wallet page already reads."""
+    if key == "value":
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if isinstance(data, dict):
+            return {"value": data.get("value")}
+        return data
+    rows = _rows(payload)
+    if key == "positions":
+        return [_position_row(row) for row in rows]
+    if key == "activity":
+        return [_activity_row(row) for row in rows]
+    return rows
+
+
+def _rows(payload: Any) -> list[Any]:
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+        return payload["data"]
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def _position_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **row,
+        "size": row.get("current_size", row.get("size")),
+        "avgPrice": row.get("avg_price", row.get("avgPrice")),
+        "curPrice": row.get("current_price", row.get("curPrice")),
+        "cashPnl": row.get("unrealized_pnl", row.get("cashPnl")),
+    }
+
+
+def _activity_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {**row, "usdcSize": row.get("usdc_size", row.get("usdcSize"))}
 
 
 def _safe_list(fn: Any, **kwargs: Any) -> Any:

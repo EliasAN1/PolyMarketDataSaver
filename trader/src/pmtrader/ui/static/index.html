@@ -9,8 +9,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css?v=22" />
-  <link rel="stylesheet" href="/compact.css?v=31" />
+  <link rel="stylesheet" href="/styles.css?v=30" />
+  <link rel="stylesheet" href="/compact.css?v=37" />
 </head>
 <body>
   <div class="shell is-loading" id="app-shell">
@@ -260,8 +260,16 @@
             <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
           </button>
         </div>
+        <div id="profile-body" class="wallet-body"></div>
+      </section>
+
+      <section class="tab-pane" data-tab="settings" id="settings-pane" hidden>
+        <header class="settings-intro">
+          <h3 class="section-heading">Settings</h3>
+          <p>Saved schedule for every day. Stopping today or tomorrow lasts until that local midnight and does not change the saved hours.</p>
+        </header>
         <section class="day-controls" id="day-controls">
-          <h3 class="day-controls-title">Trading hours</h3>
+          <h3 class="day-controls-title">Today and tomorrow</h3>
           <div class="day-block">
             <div class="day-controls-row">
               <button type="button" class="day-toggle-btn" id="day-toggle-btn">Stop for today</button>
@@ -277,14 +285,6 @@
             <div class="day-hours" id="day-tomorrow-hours" role="group" aria-label="Hours tomorrow"></div>
           </div>
         </section>
-        <div id="profile-body" class="wallet-body"></div>
-      </section>
-
-      <section class="tab-pane" data-tab="settings" id="settings-pane" hidden>
-        <header class="settings-intro">
-          <h3 class="section-heading">Settings</h3>
-          <p>Saved schedule for every day. Wallet can still stop today or skip one hour — those last until the next local midnight.</p>
-        </header>
         <form id="settings-form" class="settings-form">
           <section class="settings-block">
             <h4>Stake</h4>
@@ -296,7 +296,7 @@
           </section>
           <section class="settings-block">
             <h4>When the bot may trade</h4>
-            <p>Nothing selected means every hour, day, or market. Hours and days use local time.</p>
+            <p>Nothing selected means every hour, day, or market. Hours, days, and market windows use local time.</p>
             <h5>Hours</h5>
             <div id="settings-hours" class="settings-chips" role="group" aria-label="Allowed hours"></div>
             <h5>Days</h5>
@@ -349,6 +349,6 @@
     <div class="sheet-head"><h2 id="sheet-title">Details</h2><button type="button" data-sheet-close aria-label="Close details">×</button></div>
     <div id="sheet-content"></div>
   </dialog>
-  <script type="module" src="/js/app.js?v=34"></script>
+  <script type="module" src="/js/app.js?v=47"></script>
 </body>
 </html>
